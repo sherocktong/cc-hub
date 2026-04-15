@@ -92,7 +92,7 @@ for name in data.get('profiles', {}):
   esac
 }
 
-_cc-hub "$@"
+compdef _cc-hub cc-hub
 `;
 
 const BASH_COMPLETION = `_cc-hub_profiles() {
