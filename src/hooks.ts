@@ -47,8 +47,7 @@ function buildFlat(data: SettingsData): FlatHook[] {
 }
 
 export function hooksCommand(): Command {
-  const hooks = new Command("hooks")
-    .alias("h")
+  const hooks = new Command("hook")
     .description("Manage Claude Code hooks in settings.json");
 
   // --- list ---

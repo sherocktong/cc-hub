@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import Anthropic from "@anthropic-ai/sdk";
+import { spawnSync } from "node:child_process";
 import {
   PROFILES_FILE,
   ensureProfilesFile,
@@ -154,85 +154,74 @@ export function profileCommand(): Command {
   return profile;
 }
 
-async function runWithProfile(profileName: string, prompt: string): Promise<void> {
-  ensureProfilesFile();
-  const data = readJson<ProfilesData>(PROFILES_FILE);
-  const p = data.profiles[profileName];
-  if (!p) {
-    console.error(`Profile '${profileName}' not found.`);
-    process.exit(1);
-  }
-  if (!p.token) {
-    console.error(`Profile '${profileName}' has no token configured.`);
-    process.exit(1);
-  }
+function execClaude(profileName: string, p: Profile, extraArgs: string[]): never {
+  const cmd = ["claude"];
+  if (p.model) cmd.push("--model", p.model);
+  cmd.push(...extraArgs);
 
-  const client = new Anthropic({
-    apiKey: p.token,
-    ...(p.url ? { baseURL: p.url } : {}),
-  });
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    ANTHROPIC_AUTH_TOKEN: p.token || undefined,
+    ANTHROPIC_BASE_URL: p.url || undefined,
+  };
+  // Remove ANTHROPIC_API_KEY so it doesn't conflict with ANTHROPIC_AUTH_TOKEN
+  delete env.ANTHROPIC_API_KEY;
 
   console.error(`Using profile '${profileName}': model=${p.model || "(default)"} url=${p.url || "(default)"}`);
 
-  const stream = client.messages.stream(
-    {
-      model: p.model || "claude-sonnet-4-20250514",
-      max_tokens: 4096,
-      messages: [{ role: "user", content: prompt }],
-    },
-  );
-
-  for await (const event of stream) {
-    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-      process.stdout.write(event.delta.text);
-    }
-  }
-  process.stdout.write("\n");
+  // Use spawn + inherit stdio so the interactive claude CLI works
+  const result = spawnSync(cmd[0], cmd.slice(1), {
+    stdio: "inherit",
+    env,
+  });
+  process.exit(result.status ?? 1);
 }
 
 // --- use ---
 export function useCommand(): Command {
   return new Command("use")
-    .description("Launch a chat session using a saved profile")
+    .description("Launch Claude Code with a saved profile (or set default if no args)")
     .argument("<name>", "Profile name")
-    .argument("[prompt...]", "Prompt text")
-    .action(async (name: string, promptParts: string[]) => {
-      const prompt = promptParts.join(" ");
-      if (!prompt) {
-        // No prompt — just set as default
-        ensureProfilesFile();
-        const data = readJson<ProfilesData>(PROFILES_FILE);
-        if (!data.profiles[name]) {
-          console.error(`Profile '${name}' not found.`);
-          process.exit(1);
-        }
+    .argument("[args...]", "Extra arguments passed to claude")
+    .action((name: string, args: string[]) => {
+      ensureProfilesFile();
+      const data = readJson<ProfilesData>(PROFILES_FILE);
+      const p = data.profiles[name];
+      if (!p) {
+        console.error(`Profile '${name}' not found.`);
+        process.exit(1);
+      }
+
+      // No extra args → just set as default
+      if (!args || args.length === 0) {
         data.default = name;
         writeJson(PROFILES_FILE, data);
         console.log(`Default profile set to '${name}'.`);
         return;
       }
-      await runWithProfile(name, prompt);
+
+      execClaude(name, p, args);
     });
 }
 
 // --- run ---
 export function runCommand(): Command {
   return new Command("run")
-    .description("Run a prompt using the default or a specified profile")
-    .argument("[args...]", "Optional profile name followed by prompt")
-    .action(async (args: string[]) => {
+    .description("Launch Claude Code using the default or a specified profile")
+    .argument("[args...]", "Optional profile name followed by extra arguments")
+    .action((args: string[]) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
 
       let profileName = "";
-      let promptParts: string[];
+      let claudeArgs: string[];
 
       if (args.length > 0 && data.profiles[args[0]]) {
         profileName = args[0];
-        promptParts = args.slice(1);
+        claudeArgs = args.slice(1);
       } else {
         profileName = data.default || "";
-        promptParts = args;
+        claudeArgs = args;
       }
 
       if (!profileName) {
@@ -240,11 +229,7 @@ export function runCommand(): Command {
         process.exit(1);
       }
 
-      const prompt = promptParts.join(" ");
-      if (!prompt) {
-        console.error("No prompt provided.");
-        process.exit(1);
-      }
-      await runWithProfile(profileName, prompt);
+      const p = data.profiles[profileName];
+      execClaude(profileName, p, claudeArgs);
     });
 }

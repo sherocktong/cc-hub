@@ -1,5 +1,5 @@
 {
-  "name": "cc-hub",
+  "name": "cc-hub-cli",
   "version": "1.0.0",
   "description": "Manage Claude CLI profiles, hooks, and sessions",
   "type": "module",
@@ -9,10 +9,22 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "prepublishOnly": "npm run build"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sherocktong/cc-hub.git"
+  },
+  "keywords": [
+    "claude",
+    "cli",
+    "profiles",
+    "hooks",
+    "sessions",
+    "anthropic"
+  ],
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
     "commander": "^13.1.0"
   },
   "devDependencies": {
