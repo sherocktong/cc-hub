@@ -181,6 +181,7 @@ function execClaude(profileName: string, p: Profile, extraArgs: string[]): never
 export function useCommand(): Command {
   return new Command("use")
     .description("Launch Claude Code with a saved profile (or set default if no args)")
+    .allowUnknownOption()
     .argument("<name>", "Profile name")
     .argument("[args...]", "Extra arguments passed to claude")
     .action((name: string, args: string[]) => {
@@ -208,6 +209,7 @@ export function useCommand(): Command {
 export function runCommand(): Command {
   return new Command("run")
     .description("Launch Claude Code using the default or a specified profile")
+    .allowUnknownOption()
     .argument("[args...]", "Optional profile name followed by extra arguments")
     .action((args: string[]) => {
       ensureProfilesFile();
