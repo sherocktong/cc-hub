@@ -180,28 +180,19 @@ function execClaude(profileName: string, p: Profile, extraArgs: string[]): never
 // --- use ---
 export function useCommand(): Command {
   return new Command("use")
-    .description("Launch Claude Code with a saved profile (or set default if no args)")
-    .allowUnknownOption()
+    .description("Set a profile as the default")
     .argument("<name>", "Profile name")
-    .argument("[args...]", "Extra arguments passed to claude")
-    .action((name: string, args: string[]) => {
+    .action((name: string) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
-      const p = data.profiles[name];
-      if (!p) {
+      if (!data.profiles[name]) {
         console.error(`Profile '${name}' not found.`);
         process.exit(1);
       }
 
-      // No extra args → just set as default
-      if (!args || args.length === 0) {
-        data.default = name;
-        writeJson(PROFILES_FILE, data);
-        console.log(`Default profile set to '${name}'.`);
-        return;
-      }
-
-      execClaude(name, p, args);
+      data.default = name;
+      writeJson(PROFILES_FILE, data);
+      console.log(`Default profile set to '${name}'.`);
     });
 }
 

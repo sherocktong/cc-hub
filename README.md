@@ -45,11 +45,8 @@ cc-hub profile default <name>                                # Set default
 Launch Claude Code with a profile's credentials injected as environment variables.
 
 ```bash
-# Set a profile as default (no launch)
+# Set a profile as default
 cc-hub use <name>
-
-# Launch Claude Code with a profile
-cc-hub use <name> [extra args...]
 
 # Launch using the default profile
 cc-hub run [extra args...]
@@ -58,7 +55,7 @@ cc-hub run [extra args...]
 cc-hub run <name> [extra args...]
 ```
 
-`run` and `use` exec into the `claude` CLI with `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, and `--model` set from the profile.
+`run` execs into the `claude` CLI with `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, and `--model` set from the profile.
 
 ### Hook
 
