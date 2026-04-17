@@ -2,9 +2,10 @@ import { Command } from "commander";
 import { spawnSync } from "node:child_process";
 import {
   PROFILES_FILE,
+  CLAUDE_JSON,
   ensureProfilesFile,
   readJson,
-  readJsonSafe,
+  fixJsonFile,
   writeJson,
 } from "./config.js";
 import type { ProfilesData, Profile } from "./types.js";
@@ -204,8 +205,11 @@ export function runCommand(): Command {
     .allowUnknownOption()
     .argument("[args...]", "Optional profile name followed by extra arguments")
     .action((args: string[]) => {
+      // Fix ~/.claude.json if corrupt before launching Claude
+      fixJsonFile(CLAUDE_JSON);
+
       ensureProfilesFile();
-      const data = readJsonSafe<ProfilesData>(PROFILES_FILE, { profiles: {} });
+      const data = readJson<ProfilesData>(PROFILES_FILE);
 
       let profileName = "";
       let claudeArgs: string[];
