@@ -4,6 +4,7 @@ import {
   PROFILES_FILE,
   ensureProfilesFile,
   readJson,
+  readJsonSafe,
   writeJson,
 } from "./config.js";
 import type { ProfilesData, Profile } from "./types.js";
@@ -204,7 +205,7 @@ export function runCommand(): Command {
     .argument("[args...]", "Optional profile name followed by extra arguments")
     .action((args: string[]) => {
       ensureProfilesFile();
-      const data = readJson<ProfilesData>(PROFILES_FILE);
+      const data = readJsonSafe<ProfilesData>(PROFILES_FILE, { profiles: {} });
 
       let profileName = "";
       let claudeArgs: string[];
