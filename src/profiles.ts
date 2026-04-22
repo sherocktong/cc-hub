@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { spawnSync } from "node:child_process";
+import { spawnSync, spawn } from "node:child_process";
 import {
   PROFILES_FILE,
   SETTINGS_FILE,
@@ -10,7 +10,8 @@ import {
   fixJsonFile,
   writeJson,
 } from "./config.js";
-import type { ProfilesData, Profile, SettingsData } from "./types.js";
+import type { ProfilesData, Profile, SettingsData, ProviderType } from "./types.js";
+import { startOpenAIProxy } from "./provider.js";
 
 function maskToken(token: string): string {
   if (!token) return "(unset)";
@@ -66,11 +67,11 @@ function updateSettingsForProfile(p: Profile): void {
     // If there are non-Anthropic models, use aliases in availableModels
     // since we're mapping them via ANTHROPIC_DEFAULT_*_MODEL env vars at runtime
     if (nonAnthropicModels.length > 0) {
-      const aliases: string[] = [];
+    const aliases: string[] = [];
       if (nonAnthropicModels[0]) aliases.push("opus");
       if (nonAnthropicModels[1]) aliases.push("sonnet");
       if (nonAnthropicModels[2]) aliases.push("haiku");
-      settings.availableModels = aliases;
+    settings.availableModels = aliases;
     } else {
       // Pure Anthropic models - use actual model IDs
       settings.availableModels = models;
@@ -114,7 +115,8 @@ export function profileCommand(): Command {
     .option("-m, --model <model>", "Model ID (e.g. claude-opus-4-6) - can be used multiple times", collect, [])
     .option("-t, --token <token>", "API key / token")
     .option("-u, --url <url>", "Base URL (e.g. https://api.anthropic.com)")
-    .action((name: string, opts: { model?: string[]; token?: string; url?: string }) => {
+    .option("-p, --provider <provider>", "Provider type: anthropic (default) or openai")
+    .action((name: string, opts: { model?: string[]; token?: string; url?: string; provider?: string }) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
       const profile = data.profiles[name] || {};
@@ -126,6 +128,7 @@ export function profileCommand(): Command {
       }
       if (opts.token) profile.token = opts.token;
       if (opts.url) profile.url = opts.url;
+      if (opts.provider) profile.provider = opts.provider as ProviderType;
 
       data.profiles[name] = profile;
       writeJson(PROFILES_FILE, data);
@@ -140,7 +143,8 @@ export function profileCommand(): Command {
     .option("-m, --model <model>", "Model ID - can be used multiple times to set multiple models", collect, [])
     .option("-t, --token <token>", "API key / token")
     .option("-u, --url <url>", "Base URL")
-    .action((name: string, opts: { model?: string[]; token?: string; url?: string }) => {
+    .option("-p, --provider <provider>", "Provider type: anthropic (default) or openai")
+    .action((name: string, opts: { model?: string[]; token?: string; url?: string; provider?: string }) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
       if (!data.profiles[name]) {
@@ -181,6 +185,7 @@ export function profileCommand(): Command {
 
       if (opts.token) p.token = opts.token;
       if (opts.url) p.url = opts.url;
+      if (opts.provider) p.provider = opts.provider as ProviderType;
 
       writeJson(PROFILES_FILE, data);
       console.log(`Profile '${name}' updated.`);
@@ -240,11 +245,11 @@ export function profileCommand(): Command {
         return;
       }
       const def = data.default || "";
-      const fmt = (marker: string, name: string, model: string, token: string, url: string) =>
-        `${marker.padEnd(2)}  ${name.padEnd(20)}  ${model.padEnd(30)}  ${token.padEnd(20)}  ${url}`;
+      const fmt = (marker: string, name: string, model: string, token: string, provider: string, url: string) =>
+        `${marker.padEnd(2)}  ${name.padEnd(20)}  ${model.padEnd(30)}  ${token.padEnd(20)}  ${provider.padEnd(12)}  ${url}`;
 
-      console.log(fmt("", "NAME", "MODEL(S)", "TOKEN", "URL"));
-      console.log(fmt("", "----", "--------", "-----", "---"));
+      console.log(fmt("", "NAME", "MODEL(S)", "TOKEN", "PROVIDER", "URL"));
+      console.log(fmt("", "----", "--------", "-----", "--------", "---"));
       for (const name of names) {
         const p = profiles[name];
         const marker = name === def ? "* " : "  ";
@@ -253,6 +258,7 @@ export function profileCommand(): Command {
           name,
           formatModels(p),
           maskToken(p.token || ""),
+          p.provider || "anthropic",
           p.url || "(default)",
         ));
       }
@@ -275,8 +281,8 @@ export function profileCommand(): Command {
       if (opts.json) {
         console.log(JSON.stringify({ name, ...p }, null, 2));
       } else {
-        console.log(`Name:    ${name}`);
-        console.log(`Model:   ${p.model || "(unset)"}`);
+        console.log(`Name:     ${name}`);
+        console.log(`Model:    ${p.model || "(unset)"}`);
         if (p.models && p.models.length > 0) {
           const nonAnthropicModels = p.models.filter(m => !isAnthropicModel(m));
           console.log(`Models:`);
@@ -293,8 +299,9 @@ export function profileCommand(): Command {
             }
           }
         }
-        console.log(`Token:   ${p.token || "(unset)"}`);
-        console.log(`URL:     ${p.url || "(default)"}`);
+        console.log(`Token:    ${p.token || "(unset)"}`);
+        console.log(`URL:      ${p.url || "(default)"}`);
+        console.log(`Provider: ${p.provider || "anthropic"}`);
       }
     });
 
@@ -357,38 +364,71 @@ function execClaude(profileName: string, p: Profile, extraArgs: string[]): never
     ANTHROPIC_BASE_URL: p.url || undefined,
   };
 
-  // Set model aliases at runtime for non-Anthropic models
-  const nonAnthropicModels = models.filter(m => !isAnthropicModel(m));
-  if (nonAnthropicModels.length > 0) {
-    if (nonAnthropicModels[0]) {
-      env.ANTHROPIC_DEFAULT_OPUS_MODEL = nonAnthropicModels[0];
-      env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME = nonAnthropicModels[0];
-      env.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[0]}`;
+  // For non-openai provider with non-Anthropic models, set up model alias env vars
+  // This allows using aliases like "opus" to map to custom model names
+  if (p.provider !== "openai") {
+    const nonAnthropicModels = models.filter(m => !isAnthropicModel(m));
+    if (nonAnthropicModels.length > 0) {
+      if (nonAnthropicModels[0]) {
+        env.ANTHROPIC_DEFAULT_OPUS_MODEL = nonAnthropicModels[0];
+        env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME = nonAnthropicModels[0];
+        env.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[0]}`;
+      }
+      if (nonAnthropicModels[1]) {
+        env.ANTHROPIC_DEFAULT_SONNET_MODEL = nonAnthropicModels[1];
+        env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME = nonAnthropicModels[1];
+        env.ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[1]}`;
+      }
+      if (nonAnthropicModels[2]) {
+        env.ANTHROPIC_DEFAULT_HAIKU_MODEL = nonAnthropicModels[2];
+        env.ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME = nonAnthropicModels[2];
+        env.ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[2]}`;
+      }
+      env.ANTHROPIC_CUSTOM_MODEL_OPTION = nonAnthropicModels[0];
     }
-    if (nonAnthropicModels[1]) {
-      env.ANTHROPIC_DEFAULT_SONNET_MODEL = nonAnthropicModels[1];
-      env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME = nonAnthropicModels[1];
-      env.ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[1]}`;
-    }
-    if (nonAnthropicModels[2]) {
-      env.ANTHROPIC_DEFAULT_HAIKU_MODEL = nonAnthropicModels[2];
-      env.ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME = nonAnthropicModels[2];
-      env.ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[2]}`;
-    }
-    env.ANTHROPIC_CUSTOM_MODEL_OPTION = nonAnthropicModels[0];
   }
 
   // Remove ANTHROPIC_API_KEY so it doesn't conflict with ANTHROPIC_AUTH_TOKEN
   delete env.ANTHROPIC_API_KEY;
 
-  console.error(`Using profile '${profileName}': model=${firstModel || "(default)"} url=${p.url || "(default)"}`);
+  console.error(`Using profile '${profileName}': model=${firstModel || "(default)"} url=${p.url || "(default)"} provider=${p.provider || "anthropic"}`);
 
-  // Use spawn + inherit stdio so the interactive claude CLI works
-  const result = spawnSync(cmd[0], cmd.slice(1), {
-    stdio: "inherit",
-    env,
-  });
-  process.exit(result.status ?? 1);
+  if (p.provider === "openai") {
+    const allModels = p.models || (p.model ? [p.model] : []);
+    // Map alias (opus/sonnet/haiku) to real model name
+    const aliasToModel: Record<string, string> = {};
+    if (allModels[0]) aliasToModel["opus"] = allModels[0];
+    if (allModels[1]) aliasToModel["sonnet"] = allModels[1];
+    if (allModels[2]) aliasToModel["haiku"] = allModels[2];
+
+    startOpenAIProxy(
+      p.url || "https://api.openai.com",
+      p.token || "",
+      firstModel || "gpt-4o",
+      allModels,
+      aliasToModel,
+    ).then(({ baseUrl, stop }) => {
+      env.ANTHROPIC_BASE_URL = baseUrl;
+      // Keep ANTHROPIC_AUTH_TOKEN so Claude Code thinks it's authenticated
+      // The proxy will override with its own auth header
+
+      const child = spawn(cmd[0], cmd.slice(1), { stdio: "inherit", env });
+      child.on("close", (code) => {
+        stop();
+        process.exit(code ?? 1);
+      });
+    }).catch((err) => {
+      console.error("Failed to start OpenAI proxy:", err);
+      process.exit(1);
+    });
+  } else {
+    // Use spawn + inherit stdio so the interactive claude CLI works
+    const result = spawnSync(cmd[0], cmd.slice(1), {
+      stdio: "inherit",
+      env,
+    });
+    process.exit(result.status ?? 1);
+  }
 }
 
 // --- use ---

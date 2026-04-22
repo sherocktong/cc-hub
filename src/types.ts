@@ -1,8 +1,11 @@
+export type ProviderType = "anthropic" | "openai";
+
 export interface Profile {
   model?: string;
   models?: string[];
   token?: string;
   url?: string;
+  provider?: ProviderType;
 }
 
 export interface ProfilesData {
