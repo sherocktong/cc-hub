@@ -364,28 +364,25 @@ function execClaude(profileName: string, p: Profile, extraArgs: string[]): never
     ANTHROPIC_BASE_URL: p.url || undefined,
   };
 
-  // For non-openai provider with non-Anthropic models, set up model alias env vars
-  // This allows using aliases like "opus" to map to custom model names
-  if (p.provider !== "openai") {
-    const nonAnthropicModels = models.filter(m => !isAnthropicModel(m));
-    if (nonAnthropicModels.length > 0) {
-      if (nonAnthropicModels[0]) {
-        env.ANTHROPIC_DEFAULT_OPUS_MODEL = nonAnthropicModels[0];
-        env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME = nonAnthropicModels[0];
-        env.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[0]}`;
-      }
-      if (nonAnthropicModels[1]) {
-        env.ANTHROPIC_DEFAULT_SONNET_MODEL = nonAnthropicModels[1];
-        env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME = nonAnthropicModels[1];
-        env.ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[1]}`;
-      }
-      if (nonAnthropicModels[2]) {
-        env.ANTHROPIC_DEFAULT_HAIKU_MODEL = nonAnthropicModels[2];
-        env.ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME = nonAnthropicModels[2];
-        env.ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[2]}`;
-      }
-      env.ANTHROPIC_CUSTOM_MODEL_OPTION = nonAnthropicModels[0];
+  // Set up model alias env vars for non-Anthropic models
+  const nonAnthropicModels = models.filter(m => !isAnthropicModel(m));
+  if (nonAnthropicModels.length > 0) {
+    if (nonAnthropicModels[0]) {
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL = nonAnthropicModels[0];
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME = nonAnthropicModels[0];
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[0]}`;
     }
+    if (nonAnthropicModels[1]) {
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL = nonAnthropicModels[1];
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME = nonAnthropicModels[1];
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[1]}`;
+    }
+    if (nonAnthropicModels[2]) {
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL = nonAnthropicModels[2];
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME = nonAnthropicModels[2];
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[2]}`;
+    }
+    env.ANTHROPIC_CUSTOM_MODEL_OPTION = nonAnthropicModels[0];
   }
 
   // Remove ANTHROPIC_API_KEY so it doesn't conflict with ANTHROPIC_AUTH_TOKEN
@@ -395,18 +392,12 @@ function execClaude(profileName: string, p: Profile, extraArgs: string[]): never
 
   if (p.provider === "openai") {
     const allModels = p.models || (p.model ? [p.model] : []);
-    // Map alias (opus/sonnet/haiku) to real model name
-    const aliasToModel: Record<string, string> = {};
-    if (allModels[0]) aliasToModel["opus"] = allModels[0];
-    if (allModels[1]) aliasToModel["sonnet"] = allModels[1];
-    if (allModels[2]) aliasToModel["haiku"] = allModels[2];
 
     startOpenAIProxy(
       p.url || "https://api.openai.com",
       p.token || "",
       firstModel || "gpt-4o",
       allModels,
-      aliasToModel,
     ).then(({ baseUrl, stop }) => {
       env.ANTHROPIC_BASE_URL = baseUrl;
       // Keep ANTHROPIC_AUTH_TOKEN so Claude Code thinks it's authenticated

@@ -15,7 +15,7 @@ function sanitizeToolId(id: string): string {
   return sanitized;
 }
 
-function transformAnthropicToOpenAI(body: Record<string, any>, aliasToModel?: Record<string, string>): Record<string, any> {
+function transformAnthropicToOpenAI(body: Record<string, any>): Record<string, any> {
   const messages: any[] = [];
 
   // System prompt
@@ -119,7 +119,7 @@ function transformAnthropicToOpenAI(body: Record<string, any>, aliasToModel?: Re
   }
 
   const result: Record<string, any> = {
-    model: aliasToModel && aliasToModel[body.model] ? aliasToModel[body.model] : body.model,
+    model: body.model,
     messages,
     stream: body.stream ?? false,
   };
@@ -445,7 +445,6 @@ export async function startOpenAIProxy(
   apiKey: string,
   model: string,
   models: string[] = [],
-  aliasToModel?: Record<string, string>, // Maps alias (opus/sonnet/haiku) to real model name
 ): Promise<{ baseUrl: string; stop: () => void }> {
   const base = targetUrl.replace(/\/+$/, "");
 
@@ -475,7 +474,7 @@ export async function startOpenAIProxy(
           return;
         }
 
-        const openaiBody = transformAnthropicToOpenAI(parsed, aliasToModel);
+        const openaiBody = transformAnthropicToOpenAI(parsed);
         const isStream = !!parsed.stream;
 
         const upstream = await fetch(`${base}/v1/chat/completions`, {
