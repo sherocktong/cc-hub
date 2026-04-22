@@ -10,9 +10,16 @@ _cc-hub() {
     'run:Launch Claude Code using the default or a specified profile'
     'hook:Manage Claude Code hooks in settings.json'
     'session:Manage Claude Code sessions'
+    'provider:Manage provider types'
     'complete:Print shell completion functions'
     'help:Display help for a command'
   )
+
+  local -a provider_subcmds
+  provider_subcmds=(
+    'list:List available provider types'
+  )
+
 
   local -a profile_subcmds
   profile_subcmds=(
@@ -48,13 +55,18 @@ _cc-hub() {
     local profiles_file="\${CLAUDE_PROFILES_FILE:-\$HOME/.claude/profiles.json}"
     if [[ -f "$profiles_file" ]]; then
       local -a names
-      names=(\${(f)"$(command python3 -c "
-import json
-data = json.load(open('$profiles_file'))
-for name in data.get('profiles', {}):
-    print(name)
-" 2>/dev/null)"})
+      names=(\${(f)"$(command jq -r '.profiles | keys[]' "$profiles_file" 2>/dev/null)"})
       _describe -t profiles 'profile' names
+    fi
+  }
+
+  _cc_hub_models_for_profile() {
+    local profile_name="$1"
+    local profiles_file="\${CLAUDE_PROFILES_FILE:-\$HOME/.claude/profiles.json}"
+    if [[ -f "$profiles_file" && -n "$profile_name" ]]; then
+      local -a models
+      models=(\${(f)"$(command jq -r --arg p "$profile_name" '(.profiles[$p].models // [ .profiles[$p].model ] )[]? // empty' "$profiles_file" 2>/dev/null)"})
+      _describe -t models 'model' models
     fi
   }
 
@@ -71,8 +83,32 @@ for name in data.get('profiles', {}):
         profile)
           if (( CURRENT == 2 )); then
             _describe -t profile-subcmds 'profile subcommand' profile_subcmds
-          elif [[ $words[2] == "view" || $words[2] == "remove" || $words[2] == "default" || $words[2] == "update" || $words[2] == "remove-model" ]]; then
+          elif [[ $words[2] == "view" || $words[2] == "remove" || $words[2] == "default" || $words[2] == "remove-model" ]]; then
             _cc_hub_profiles
+          elif [[ $words[2] == "update" ]]; then
+            if (( CURRENT == 3 )); then
+              _cc_hub_profiles
+            else
+              words=("stub" $words[3,-1])
+              (( CURRENT-- ))
+              _arguments -C -S \
+                '1:profile:_cc_hub_profiles' \
+                '(-m --model)*'{-m,--model}'[Model ID]:model:->profileModel' \
+                '(-d --delete-model)*'{-d,--delete-model}'[Remove model ID]:model:->profileModel' \
+                '(-t --token)'{-t,--token}'[API key / token]:token:' \
+                '(-u --url)'{-u,--url}'[Base URL]:url:' \
+                '(-p --provider)'{-p,--provider}'[Provider type]:provider:(anthropic openai)'
+              case $state in
+                profileModel)
+                  _cc_hub_models_for_profile $line[1]
+                  ;;
+              esac
+            fi
+          fi
+          ;;
+        provider)
+          if (( CURRENT == 2 )); then
+            _describe -t provider-subcmds 'provider subcommand' provider_subcmds
           fi
           ;;
         use|run)
@@ -110,14 +146,39 @@ for name in data.get('profiles', {}):
   fi
 }
 
+_cc-hub_models_for_profile() {
+  local profile_name="$1"
+  local profiles_file="\${CLAUDE_PROFILES_FILE:-\$HOME/.claude/profiles.json}"
+  if [[ -f "$profiles_file" && -n "$profile_name" ]]; then
+    local models
+    models=$(command python3 -c "
+import json
+data = json.load(open('$profiles_file'))
+p = data.get('profiles', {}).get('$profile_name', {})
+models = p.get('models')
+if isinstance(models, list):
+    for m in models:
+        if m:
+            print(m)
+else:
+    m = p.get('model')
+    if m:
+        print(m)
+" 2>/dev/null)
+    COMPREPLY=($(compgen -W "$models" -- "\${cur}"))
+  fi
+}
+
 _cc-hub() {
   local cur prev commands
   COMPREPLY=()
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="profile use run hook session complete help"
+  commands="profile use run hook session provider complete help"
 
   local profile_subcmds="add update remove-model list view remove default"
+  local provider_subcmds="list"
+  local provider_types="anthropic openai"
   local hooks_subcmds="list add remove enable disable"
   local session_subcmds="list show search ps stats clean"
 
@@ -133,10 +194,28 @@ _cc-hub() {
     profile)
       if [[ \${COMP_CWORD} -eq 2 ]]; then
         COMPREPLY=($(compgen -W "$profile_subcmds" -- "$cur"))
-      elif [[ "$prev" == "view" || "$prev" == "remove" || "$prev" == "default" || "$prev" == "update" || "$prev" == "remove-model" ]]; then
+      elif [[ "$prev" == "view" || "$prev" == "remove" || "$prev" == "default" || "$prev" == "remove-model" ]]; then
         _cc-hub_profiles
       elif [[ "$prev" == "profile" ]]; then
         COMPREPLY=($(compgen -W "$profile_subcmds" -- "$cur"))
+      elif [[ "\${COMP_WORDS[2]}" == "update" && \${COMP_CWORD} -eq 3 ]]; then
+        _cc-hub_profiles
+      elif [[ "\${COMP_WORDS[2]}" == "update" ]]; then
+        if [[ "$prev" == "--provider" || "$prev" == "-p" ]]; then
+          COMPREPLY=($(compgen -W "$provider_types" -- "$cur"))
+        elif [[ "$prev" == "--model" || "$prev" == "-m" || "$prev" == "--delete-model" || "$prev" == "-d" ]]; then
+          _cc-hub_models_for_profile "\${COMP_WORDS[3]}"
+        else
+          local update_opts="--model -m --delete-model -d --token -t --url -u --provider -p"
+          COMPREPLY=($(compgen -W "$update_opts" -- "$cur"))
+        fi
+      fi
+      ;;
+    provider)
+      if [[ \${COMP_CWORD} -eq 2 ]]; then
+        COMPREPLY=($(compgen -W "$provider_subcmds" -- "$cur"))
+      elif [[ "$prev" == "provider" ]]; then
+        COMPREPLY=($(compgen -W "$provider_subcmds" -- "$cur"))
       fi
       ;;
     use|run)

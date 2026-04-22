@@ -141,10 +141,11 @@ export function profileCommand(): Command {
     .description("Update fields of an existing profile")
     .argument("<name>", "Profile name (must already exist)")
     .option("-m, --model <model>", "Model ID - can be used multiple times to set multiple models", collect, [])
+    .option("-d, --delete-model <model>", "Remove model ID - can be used multiple times", collect, [])
     .option("-t, --token <token>", "API key / token")
     .option("-u, --url <url>", "Base URL")
     .option("-p, --provider <provider>", "Provider type: anthropic (default) or openai")
-    .action((name: string, opts: { model?: string[]; token?: string; url?: string; provider?: string }) => {
+    .action((name: string, opts: { model?: string[]; deleteModel?: string[]; token?: string; url?: string; provider?: string }) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
       if (!data.profiles[name]) {
@@ -154,6 +155,26 @@ export function profileCommand(): Command {
       const p = data.profiles[name];
 
       const providedModels = opts.model && opts.model.length > 0 ? opts.model : undefined;
+      const modelsToDelete = opts.deleteModel && opts.deleteModel.length > 0 ? opts.deleteModel : undefined;
+
+      if (modelsToDelete) {
+        const toRemove = new Set(modelsToDelete);
+        const currentModels = p.models || (p.model ? [p.model] : []);
+        const newModels = currentModels.filter(m => !toRemove.has(m));
+        const removedCount = currentModels.length - newModels.length;
+
+        if (removedCount === 0) {
+          console.log(`No matching models to remove from profile '${name}'.`);
+        } else if (newModels.length === 0) {
+          delete p.models;
+          delete p.model;
+          console.log(`Removed all models from profile '${name}'.`);
+        } else {
+          p.models = newModels;
+          p.model = newModels[0];
+          console.log(`Removed ${removedCount} model(s) from profile '${name}'.`);
+        }
+      }
 
       if (providedModels) {
         if (providedModels.length === 1) {
