@@ -217,220 +217,69 @@ function transformOpenAIResponseToAnthropic(
 }
 
 // ---------------------------------------------------------------------------
-// Stream transformation: OpenAI SSE → Anthropic SSE
+// Stream synthesis: Anthropic response object → Anthropic SSE
 // ---------------------------------------------------------------------------
 
-async function* transformOpenAIStreamToAnthropic(
-  response: Response,
-  originalModel: string,
-): AsyncGenerator<string> {
-  const messageId = `msg_${Date.now()}`;
-  let model = originalModel;
-  let hasStarted = false;
-  let hasTextStarted = false;
-  let currentBlockIndex = -1;
-  let contentIndex = 0;
-  let isClosed = false;
-  let stopReasonDelta: any = null;
-
-  const toolCalls = new Map<number, { id: string; name: string; args: string; blockIndex: number }>();
-  const toolIndexToBlock = new Map<number, number>();
-
-  const nextBlockIndex = () => contentIndex++;
-
+function* synthesizeAnthropicSSE(
+  anthropicResponse: any,
+): Generator<string> {
   const sse = (event: string, data: any) =>
     `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
+  const usage = anthropicResponse.usage ?? {};
+  yield sse("message_start", {
+    type: "message_start",
+    message: {
+      id: anthropicResponse.id,
+      type: "message",
+      role: "assistant",
+      content: [],
+      model: anthropicResponse.model,
+      stop_reason: null,
+      stop_sequence: null,
+      usage: {
+        input_tokens: usage.input_tokens ?? 0,
+        output_tokens: 0,
+        cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
+      },
+    },
+  });
 
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        if (isClosed) break;
-        if (!line.startsWith("data:")) continue;
-
-        const raw = line.slice(5).trim();
-        if (raw === "[DONE]") continue;
-
-        let chunk: any;
-        try {
-          chunk = JSON.parse(raw);
-        } catch {
-          continue;
-        }
-
-        if (chunk.error) {
-          yield sse("error", {
-            type: "error",
-            message: { type: "api_error", message: JSON.stringify(chunk.error) },
-          });
-          continue;
-        }
-
-        model = chunk.model ?? model;
-
-        if (!hasStarted) {
-          hasStarted = true;
-          yield sse("message_start", {
-            type: "message_start",
-            message: {
-              id: messageId,
-              type: "message",
-              role: "assistant",
-              content: [],
-              model,
-              stop_reason: null,
-              stop_sequence: null,
-              usage: { input_tokens: 0, output_tokens: 0 },
-            },
-          });
-        }
-
-        // Track usage from chunks that carry it
-        if (chunk.usage) {
-          stopReasonDelta = {
-            type: "message_delta",
-            delta: { stop_reason: "end_turn", stop_sequence: null },
-            usage: {
-              input_tokens:
-                (chunk.usage.prompt_tokens ?? 0) -
-                (chunk.usage.prompt_tokens_details?.cached_tokens ?? 0),
-              output_tokens: chunk.usage.completion_tokens ?? 0,
-              cache_read_input_tokens:
-                chunk.usage.prompt_tokens_details?.cached_tokens ?? 0,
-            },
-          };
-        }
-
-        const choice = chunk.choices?.[0];
-        if (!choice) continue;
-
-        // --- text delta ---
-        if (choice.delta?.content) {
-          if (!hasTextStarted) {
-            hasTextStarted = true;
-            const idx = nextBlockIndex();
-            currentBlockIndex = idx;
-            yield sse("content_block_start", {
-              type: "content_block_start",
-              index: idx,
-              content_block: { type: "text", text: "" },
-            });
-          }
-          yield sse("content_block_delta", {
-            type: "content_block_delta",
-            index: currentBlockIndex,
-            delta: { type: "text_delta", text: choice.delta.content },
-          });
-        }
-
-        // --- tool_calls delta ---
-        if (choice.delta?.tool_calls?.length) {
-          for (const tc of choice.delta.tool_calls) {
-            const tcIdx = tc.index ?? 0;
-
-            if (!toolIndexToBlock.has(tcIdx)) {
-              // Close any open text block
-              if (currentBlockIndex >= 0 && hasTextStarted) {
-                yield sse("content_block_stop", {
-                  type: "content_block_stop",
-                  index: currentBlockIndex,
-                });
-                currentBlockIndex = -1;
-                hasTextStarted = false;
-              }
-
-              const blockIdx = nextBlockIndex();
-              toolIndexToBlock.set(tcIdx, blockIdx);
-              currentBlockIndex = blockIdx;
-              const toolId = tc.id ?? `call_${Date.now()}_${tcIdx}`;
-              const toolName = tc.function?.name ?? `tool_${tcIdx}`;
-              toolCalls.set(tcIdx, { id: toolId, name: toolName, args: "", blockIndex: blockIdx });
-
-              yield sse("content_block_start", {
-                type: "content_block_start",
-                index: blockIdx,
-                content_block: { type: "tool_use", id: toolId, name: toolName, input: {} },
-              });
-            }
-
-            if (tc.function?.arguments) {
-              const blockIdx = toolIndexToBlock.get(tcIdx)!;
-              const info = toolCalls.get(tcIdx)!;
-              info.args += tc.function.arguments;
-              yield sse("content_block_delta", {
-                type: "content_block_delta",
-                index: blockIdx,
-                delta: { type: "input_json_delta", partial_json: tc.function.arguments },
-              });
-            }
-          }
-        }
-
-        // --- finish ---
-        if (choice.finish_reason) {
-          const finishMap: Record<string, string> = {
-            stop: "end_turn",
-            length: "max_tokens",
-            tool_calls: "tool_use",
-            content_filter: "stop_sequence",
-          };
-
-          // Close open block
-          if (currentBlockIndex >= 0) {
-            yield sse("content_block_stop", {
-              type: "content_block_stop",
-              index: currentBlockIndex,
-            });
-            currentBlockIndex = -1;
-          }
-
-          stopReasonDelta = {
-            ...(stopReasonDelta ?? {}),
-            type: "message_delta",
-            delta: {
-              stop_reason: finishMap[choice.finish_reason] ?? "end_turn",
-              stop_sequence: null,
-            },
-            usage: stopReasonDelta?.usage ?? {
-              input_tokens: 0,
-              output_tokens: 0,
-              cache_read_input_tokens: 0,
-            },
-          };
-
-          isClosed = true;
-          break;
-        }
-      }
-
-      if (isClosed) break;
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  // Emit close events
-  if (currentBlockIndex >= 0) {
-    yield sse("content_block_stop", {
-      type: "content_block_stop",
-      index: currentBlockIndex,
+  for (let i = 0; i < (anthropicResponse.content ?? []).length; i++) {
+    const block = anthropicResponse.content[i];
+    yield sse("content_block_start", {
+      type: "content_block_start",
+      index: i,
+      content_block:
+        block.type === "tool_use"
+          ? { type: "tool_use", id: block.id, name: block.name, input: {} }
+          : { type: "text", text: "" },
     });
+
+    if (block.type === "text" && block.text) {
+      yield sse("content_block_delta", {
+        type: "content_block_delta",
+        index: i,
+        delta: { type: "text_delta", text: block.text },
+      });
+    } else if (block.type === "tool_use" && block.input) {
+      yield sse("content_block_delta", {
+        type: "content_block_delta",
+        index: i,
+        delta: { type: "input_json_delta", partial_json: JSON.stringify(block.input) },
+      });
+    }
+
+    yield sse("content_block_stop", { type: "content_block_stop", index: i });
   }
 
-  yield sse("message_delta", stopReasonDelta ?? {
+  yield sse("message_delta", {
     type: "message_delta",
-    delta: { stop_reason: "end_turn", stop_sequence: null },
-    usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0 },
+    delta: {
+      stop_reason: anthropicResponse.stop_reason ?? "end_turn",
+      stop_sequence: anthropicResponse.stop_sequence ?? null,
+    },
+    usage: { output_tokens: usage.output_tokens ?? 0 },
   });
 
   yield sse("message_stop", { type: "message_stop" });
@@ -474,8 +323,11 @@ export async function startOpenAIProxy(
           return;
         }
 
-        const openaiBody = transformAnthropicToOpenAI(parsed);
         const isStream = !!parsed.stream;
+        // Always request non-streaming from OpenAI so that token counts are
+        // available upfront and can be placed in message_start, which is what
+        // Claude Code uses to populate the context bar.
+        const openaiBody = transformAnthropicToOpenAI({ ...parsed, stream: false });
 
         const upstream = await fetch(`${base}/v1/chat/completions`, {
           method: "POST",
@@ -493,20 +345,20 @@ export async function startOpenAIProxy(
           return;
         }
 
+        const data = await upstream.json();
+        const anthropicResponse = transformOpenAIResponseToAnthropic(data, parsed.model ?? model);
+
         if (isStream) {
           res.writeHead(200, {
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
           });
-
-          for await (const chunk of transformOpenAIStreamToAnthropic(upstream, parsed.model ?? model)) {
+          for (const chunk of synthesizeAnthropicSSE(anthropicResponse)) {
             res.write(chunk);
           }
           res.end();
         } else {
-          const data = await upstream.json();
-          const anthropicResponse = transformOpenAIResponseToAnthropic(data, parsed.model ?? model);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify(anthropicResponse));
         }
