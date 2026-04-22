@@ -2,18 +2,104 @@ import { Command } from "commander";
 import { spawnSync } from "node:child_process";
 import {
   PROFILES_FILE,
+  SETTINGS_FILE,
   CLAUDE_JSON,
   ensureProfilesFile,
+  ensureSettingsFile,
   readJson,
   fixJsonFile,
   writeJson,
 } from "./config.js";
-import type { ProfilesData, Profile } from "./types.js";
+import type { ProfilesData, Profile, SettingsData } from "./types.js";
 
 function maskToken(token: string): string {
   if (!token) return "(unset)";
   if (token.length <= 12) return token;
   return token.slice(0, 8) + "..." + token.slice(-4);
+}
+
+function formatModels(p: Profile): string {
+  if (p.models && p.models.length > 0) {
+    const nonAnthropicModels = p.models.filter(m => !isAnthropicModel(m));
+    const parts: string[] = [];
+
+    p.models.forEach((m, i) => {
+      if (!isAnthropicModel(m)) {
+        // Non-Anthropic model - show with alias
+        const aliasIndex = nonAnthropicModels.indexOf(m);
+        if (aliasIndex === 0) parts.push(`${m} (opus)`);
+        else if (aliasIndex === 1) parts.push(`${m} (sonnet)`);
+        else if (aliasIndex === 2) parts.push(`${m} (haiku)`);
+        else parts.push(m);
+      } else {
+        // Anthropic model - show as-is
+        parts.push(m);
+      }
+    });
+
+    const joined = parts.join(", ");
+    if (joined.length > 28) {
+      return parts[0] + ", +" + (parts.length - 1) + " more";
+    }
+    return joined;
+  }
+  return p.model || "(unset)";
+}
+
+function isAnthropicModel(model: string): boolean {
+  const anthropicAliases = ["opus", "sonnet", "haiku", "best", "default", "opusplan", "opus[1m]", "sonnet[1m]"];
+  const lower = model.toLowerCase();
+  if (anthropicAliases.includes(lower)) return true;
+  if (lower.startsWith("claude-")) return true;
+  return false;
+}
+
+function updateSettingsForProfile(p: Profile): void {
+  ensureSettingsFile();
+  const settings = readJson<SettingsData>(SETTINGS_FILE);
+  const models = p.models || (p.model ? [p.model] : []);
+  const nonAnthropicModels = models.filter(m => !isAnthropicModel(m));
+
+  if (models.length > 0) {
+    settings.model = models[0];
+
+    // If there are non-Anthropic models, use aliases in availableModels
+    // since we're mapping them via ANTHROPIC_DEFAULT_*_MODEL env vars at runtime
+    if (nonAnthropicModels.length > 0) {
+      const aliases: string[] = [];
+      if (nonAnthropicModels[0]) aliases.push("opus");
+      if (nonAnthropicModels[1]) aliases.push("sonnet");
+      if (nonAnthropicModels[2]) aliases.push("haiku");
+      settings.availableModels = aliases;
+    } else {
+      // Pure Anthropic models - use actual model IDs
+      settings.availableModels = models;
+    }
+  } else {
+    delete settings.model;
+    delete settings.availableModels;
+  }
+
+  // Clean up old model env vars (runtime ones are set in execClaude)
+  const envVarsToClean = [
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION",
+  ];
+  if (settings.env) {
+    for (const key of envVarsToClean) {
+      delete settings.env[key];
+    }
+  }
+
+  writeJson(SETTINGS_FILE, settings);
 }
 
 export function profileCommand(): Command {
@@ -25,16 +111,22 @@ export function profileCommand(): Command {
     .command("add")
     .description("Add or update a profile")
     .argument("<name>", "Profile name")
-    .option("-m, --model <model>", "Model ID (e.g. claude-opus-4-6)")
+    .option("-m, --model <model>", "Model ID (e.g. claude-opus-4-6) - can be used multiple times", collect, [])
     .option("-t, --token <token>", "API key / token")
     .option("-u, --url <url>", "Base URL (e.g. https://api.anthropic.com)")
-    .action((name: string, opts: { model?: string; token?: string; url?: string }) => {
+    .action((name: string, opts: { model?: string[]; token?: string; url?: string }) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
       const profile = data.profiles[name] || {};
-      if (opts.model) profile.model = opts.model;
+
+      const models = opts.model && opts.model.length > 0 ? opts.model : undefined;
+      if (models) {
+        profile.models = models;
+        profile.model = models[0];
+      }
       if (opts.token) profile.token = opts.token;
       if (opts.url) profile.url = opts.url;
+
       data.profiles[name] = profile;
       writeJson(PROFILES_FILE, data);
       console.log(`Profile '${name}' saved.`);
@@ -45,10 +137,10 @@ export function profileCommand(): Command {
     .command("update")
     .description("Update fields of an existing profile")
     .argument("<name>", "Profile name (must already exist)")
-    .option("-m, --model <model>", "Model ID")
+    .option("-m, --model <model>", "Model ID - can be used multiple times to set multiple models", collect, [])
     .option("-t, --token <token>", "API key / token")
     .option("-u, --url <url>", "Base URL")
-    .action((name: string, opts: { model?: string; token?: string; url?: string }) => {
+    .action((name: string, opts: { model?: string[]; token?: string; url?: string }) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
       if (!data.profiles[name]) {
@@ -56,11 +148,82 @@ export function profileCommand(): Command {
         process.exit(1);
       }
       const p = data.profiles[name];
-      if (opts.model) p.model = opts.model;
+
+      const providedModels = opts.model && opts.model.length > 0 ? opts.model : undefined;
+
+      if (providedModels) {
+        if (providedModels.length === 1) {
+          // Single model: check if exists, select it; otherwise add it
+          const modelToSet = providedModels[0];
+          const currentModels = p.models || (p.model ? [p.model] : []);
+          const existingIndex = currentModels.indexOf(modelToSet);
+
+          if (existingIndex !== -1) {
+            // Model exists: move it to first position
+            currentModels.splice(existingIndex, 1);
+            currentModels.unshift(modelToSet);
+            p.models = currentModels;
+            p.model = modelToSet;
+            console.log(`Selected existing model '${modelToSet}' (position ${existingIndex + 1} -> 1).`);
+          } else {
+            // Model doesn't exist: add it to the list
+            currentModels.unshift(modelToSet);
+            p.models = currentModels;
+            p.model = modelToSet;
+            console.log(`Added and selected new model '${modelToSet}'.`);
+          }
+        } else {
+          // Multiple models: replace the entire list
+          p.models = providedModels;
+          p.model = providedModels[0];
+        }
+      }
+
       if (opts.token) p.token = opts.token;
       if (opts.url) p.url = opts.url;
+
       writeJson(PROFILES_FILE, data);
       console.log(`Profile '${name}' updated.`);
+    });
+
+  // --- remove-model ---
+  profile
+    .command("remove-model")
+    .description("Remove specific models from a profile")
+    .argument("<name>", "Profile name")
+    .option("-m, --model <model>", "Model ID to remove - can be used multiple times", collect, [])
+    .action((name: string, opts: { model: string[] }) => {
+      ensureProfilesFile();
+      const data = readJson<ProfilesData>(PROFILES_FILE);
+      if (!data.profiles[name]) {
+        console.error(`Profile '${name}' not found.`);
+        process.exit(1);
+      }
+
+      const p = data.profiles[name];
+      const toRemove = new Set(opts.model);
+
+      if (toRemove.size === 0) {
+        console.error("No models specified to remove. Use -m <model> to specify models.");
+        process.exit(1);
+      }
+
+      const currentModels = p.models || (p.model ? [p.model] : []);
+      const newModels = currentModels.filter(m => !toRemove.has(m));
+
+      if (newModels.length === 0) {
+        delete p.models;
+        delete p.model;
+        console.log(`Removed all models from profile '${name}'.`);
+      } else {
+        const removedCount = currentModels.length - newModels.length;
+        p.models = newModels;
+        p.model = newModels[0];
+        console.log(`Removed ${removedCount} model(s) from profile '${name}'.`);
+        console.log(`Remaining models: ${newModels.join(", ")}`);
+      }
+
+      writeJson(PROFILES_FILE, data);
     });
 
   // --- list ---
@@ -80,15 +243,15 @@ export function profileCommand(): Command {
       const fmt = (marker: string, name: string, model: string, token: string, url: string) =>
         `${marker.padEnd(2)}  ${name.padEnd(20)}  ${model.padEnd(30)}  ${token.padEnd(20)}  ${url}`;
 
-      console.log(fmt("", "NAME", "MODEL", "TOKEN", "URL"));
-      console.log(fmt("", "----", "-----", "-----", "---"));
+      console.log(fmt("", "NAME", "MODEL(S)", "TOKEN", "URL"));
+      console.log(fmt("", "----", "--------", "-----", "---"));
       for (const name of names) {
         const p = profiles[name];
         const marker = name === def ? "* " : "  ";
         console.log(fmt(
           marker,
           name,
-          p.model || "(unset)",
+          formatModels(p),
           maskToken(p.token || ""),
           p.url || "(default)",
         ));
@@ -112,10 +275,26 @@ export function profileCommand(): Command {
       if (opts.json) {
         console.log(JSON.stringify({ name, ...p }, null, 2));
       } else {
-        console.log(`Name:   ${name}`);
-        console.log(`Model:  ${p.model || "(unset)"}`);
-        console.log(`Token:  ${p.token || "(unset)"}`);
-        console.log(`URL:    ${p.url || "(default)"}`);
+        console.log(`Name:    ${name}`);
+        console.log(`Model:   ${p.model || "(unset)"}`);
+        if (p.models && p.models.length > 0) {
+          const nonAnthropicModels = p.models.filter(m => !isAnthropicModel(m));
+          console.log(`Models:`);
+          for (const m of p.models) {
+            if (!isAnthropicModel(m)) {
+              const aliasIndex = nonAnthropicModels.indexOf(m);
+              let alias = "";
+              if (aliasIndex === 0) alias = " (opus)";
+              else if (aliasIndex === 1) alias = " (sonnet)";
+              else if (aliasIndex === 2) alias = " (haiku)";
+              console.log(`  - ${m}${alias}`);
+            } else {
+              console.log(`  - ${m}`);
+            }
+          }
+        }
+        console.log(`Token:   ${p.token || "(unset)"}`);
+        console.log(`URL:     ${p.url || "(default)"}`);
       }
     });
 
@@ -156,20 +335,53 @@ export function profileCommand(): Command {
   return profile;
 }
 
+function collect(value: string, previous: string[]): string[] {
+  return previous.concat([value]);
+}
+
 function execClaude(profileName: string, p: Profile, extraArgs: string[]): never {
+  // Update settings.json with models from profile (includes env vars)
+  updateSettingsForProfile(p);
+
+  const models = p.models || (p.model ? [p.model] : []);
+  const firstModel = models[0];
+
   const cmd = ["claude"];
-  if (p.model) cmd.push("--model", p.model);
+  if (firstModel) cmd.push("--model", firstModel);
   cmd.push(...extraArgs);
 
+  // Pass auth credentials to spawned process
   const env: Record<string, string | undefined> = {
     ...process.env,
     ANTHROPIC_AUTH_TOKEN: p.token || undefined,
     ANTHROPIC_BASE_URL: p.url || undefined,
   };
+
+  // Set model aliases at runtime for non-Anthropic models
+  const nonAnthropicModels = models.filter(m => !isAnthropicModel(m));
+  if (nonAnthropicModels.length > 0) {
+    if (nonAnthropicModels[0]) {
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL = nonAnthropicModels[0];
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME = nonAnthropicModels[0];
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[0]}`;
+    }
+    if (nonAnthropicModels[1]) {
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL = nonAnthropicModels[1];
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME = nonAnthropicModels[1];
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[1]}`;
+    }
+    if (nonAnthropicModels[2]) {
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL = nonAnthropicModels[2];
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME = nonAnthropicModels[2];
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[2]}`;
+    }
+    env.ANTHROPIC_CUSTOM_MODEL_OPTION = nonAnthropicModels[0];
+  }
+
   // Remove ANTHROPIC_API_KEY so it doesn't conflict with ANTHROPIC_AUTH_TOKEN
   delete env.ANTHROPIC_API_KEY;
 
-  console.error(`Using profile '${profileName}': model=${p.model || "(default)"} url=${p.url || "(default)"}`);
+  console.error(`Using profile '${profileName}': model=${firstModel || "(default)"} url=${p.url || "(default)"}`);
 
   // Use spawn + inherit stdio so the interactive claude CLI works
   const result = spawnSync(cmd[0], cmd.slice(1), {

@@ -11,8 +11,11 @@ npm install -g cc-hub-cli
 ## Quick Start
 
 ```bash
-# Add a profile
+# Add a profile with single model
 cc-hub profile add flow -m anthropic.claude-4-6-sonnet -t eyJ... -u https://example.com/api
+
+# Add a profile with multiple models
+cc-hub profile add multi -m kimi-k2.5 -m claude-sonnet-4-6 -m gpt-4 -t eyJ... -u https://api.example.com
 
 # Set as default
 cc-hub profile default flow
@@ -32,13 +35,34 @@ Manage multiple Claude API configurations (model, token, URL).
 
 ```bash
 cc-hub profile add <name> -m <model> -t <token> -u <url>   # Add or update
+cc-hub profile add <name> -m <m1> -m <m2> -t <token>       # Add with multiple models
 cc-hub profile update <name> -m <model>                      # Update fields
+cc-hub profile update <name> -m <m1> -m <m2>                 # Update with multiple models
+cc-hub profile remove-model <name> -m <model>                # Remove specific models
 cc-hub profile list                                          # List all (tokens masked)
 cc-hub profile view <name>                                   # View details (token visible)
 cc-hub profile view <name> -j                                # View as JSON
 cc-hub profile remove <name>                                 # Remove
 cc-hub profile default <name>                                # Set default
 ```
+
+**Multi-Model Profiles:**
+
+You can specify multiple models per profile using the `-m` flag multiple times:
+
+```bash
+# Add a profile with multiple models
+cc-hub profile add myprofile -m kimi-k2.5 -m claude-sonnet-4-6 -t <token> -u <url>
+
+# Remove specific models
+cc-hub profile remove-model myprofile -m kimi-k2.5
+```
+
+When you launch Claude Code with `cc-hub run`, the models are automatically populated into Claude Code's `/model` picker via the `availableModels` setting in `~/.claude/settings.json`. The first model is used as the default.
+
+**Non-Anthropic Models:**
+
+If your profile includes non-Anthropic models (e.g., `kimi-k2.5`, `gpt-4`), the first such model is also exposed via the `ANTHROPIC_CUSTOM_MODEL_OPTION` environment variable, which adds it as a named entry in the `/model` picker.
 
 ### Run / Use
 
@@ -139,6 +163,8 @@ cc-hub reads from these paths (overridable via environment variables):
 
 ### Profile storage format
 
+Single-model profile:
+
 ```json
 {
   "profiles": {
@@ -151,6 +177,44 @@ cc-hub reads from these paths (overridable via environment variables):
   "default": "flow"
 }
 ```
+
+Multi-model profile:
+
+```json
+{
+  "profiles": {
+    "multi": {
+      "model": "kimi-k2.5",
+      "models": ["kimi-k2.5", "claude-sonnet-4-6", "gpt-4"],
+      "token": "eyJ...",
+      "url": "https://api.example.com"
+    }
+  },
+  "default": "multi"
+}
+```
+
+When launching with a multi-model profile, cc-hub automatically configures Claude Code's `availableModels` setting, populating the `/model` picker with all specified models.
+
+## Claude Code Skill
+
+cc-hub includes a Claude Code skill for natural language profile management. The skill is located at `skills/cc-hub/SKILL.md`.
+
+**Capabilities:**
+- Add/remove models from profiles using natural language
+- List models in a profile
+- Set the default model for a profile
+
+**Examples:**
+
+```
+Add kimi-k2.5 and gpt-4 to my hy profile
+Remove claude-sonnet from the flow profile
+What models are in my hy profile?
+Set the default model for hy to gpt-4
+```
+
+The skill directly reads and writes `~/.claude/profiles.json` to make changes.
 
 ## License
 

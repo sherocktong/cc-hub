@@ -18,6 +18,7 @@ _cc-hub() {
   profile_subcmds=(
     'add:Add or update a profile'
     'update:Update fields of an existing profile'
+    'remove-model:Remove specific models from a profile'
     'list:List all profiles'
     'view:View full details of a profile'
     'remove:Remove a profile'
@@ -70,7 +71,7 @@ for name in data.get('profiles', {}):
         profile)
           if (( CURRENT == 2 )); then
             _describe -t profile-subcmds 'profile subcommand' profile_subcmds
-          elif [[ $words[2] == "view" || $words[2] == "remove" || $words[2] == "default" || $words[2] == "update" ]]; then
+          elif [[ $words[2] == "view" || $words[2] == "remove" || $words[2] == "default" || $words[2] == "update" || $words[2] == "remove-model" ]]; then
             _cc_hub_profiles
           fi
           ;;
@@ -116,7 +117,7 @@ _cc-hub() {
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
   commands="profile use run hook session complete help"
 
-  local profile_subcmds="add update list view remove default"
+  local profile_subcmds="add update remove-model list view remove default"
   local hooks_subcmds="list add remove enable disable"
   local session_subcmds="list show search ps stats clean"
 
@@ -132,7 +133,7 @@ _cc-hub() {
     profile)
       if [[ \${COMP_CWORD} -eq 2 ]]; then
         COMPREPLY=($(compgen -W "$profile_subcmds" -- "$cur"))
-      elif [[ "$prev" == "view" || "$prev" == "remove" || "$prev" == "default" || "$prev" == "update" ]]; then
+      elif [[ "$prev" == "view" || "$prev" == "remove" || "$prev" == "default" || "$prev" == "update" || "$prev" == "remove-model" ]]; then
         _cc-hub_profiles
       elif [[ "$prev" == "profile" ]]; then
         COMPREPLY=($(compgen -W "$profile_subcmds" -- "$cur"))

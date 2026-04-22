@@ -1,5 +1,6 @@
 export interface Profile {
   model?: string;
+  models?: string[];
   token?: string;
   url?: string;
 }
