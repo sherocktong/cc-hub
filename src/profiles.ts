@@ -383,6 +383,8 @@ function execClaude(profileName: string, p: Profile, extraArgs: string[]): never
     ...process.env,
     ANTHROPIC_AUTH_TOKEN: p.token || undefined,
     ANTHROPIC_BASE_URL: p.url || undefined,
+    CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
   };
 
   // Set up model alias env vars for non-Anthropic models
