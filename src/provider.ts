@@ -329,6 +329,44 @@ export async function startOpenAIProxy(
         // Claude Code uses to populate the context bar.
         const openaiBody = transformAnthropicToOpenAI({ ...parsed, stream: false });
 
+        if (isStream) {
+          // Send headers immediately so Claude Code's connection doesn't time
+          // out while we wait for a slow OpenAI response (e.g. /compact).
+          res.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+          });
+          // SSE keepalive comments prevent the connection from being closed
+          // before the (potentially large) OpenAI response arrives.
+          const keepalive = setInterval(() => res.write(": keepalive\n\n"), 15_000);
+          try {
+            const upstream = await fetch(`${base}/v1/chat/completions`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify(openaiBody),
+            });
+            if (!upstream.ok) {
+              const errText = await upstream.text();
+              res.write(`event: error\ndata: ${errText}\n\n`);
+              res.end();
+              return;
+            }
+            const data = await upstream.json();
+            const anthropicResponse = transformOpenAIResponseToAnthropic(data, parsed.model ?? model);
+            for (const chunk of synthesizeAnthropicSSE(anthropicResponse)) {
+              res.write(chunk);
+            }
+            res.end();
+          } finally {
+            clearInterval(keepalive);
+          }
+          return;
+        }
+
         const upstream = await fetch(`${base}/v1/chat/completions`, {
           method: "POST",
           headers: {
@@ -347,21 +385,8 @@ export async function startOpenAIProxy(
 
         const data = await upstream.json();
         const anthropicResponse = transformOpenAIResponseToAnthropic(data, parsed.model ?? model);
-
-        if (isStream) {
-          res.writeHead(200, {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-          });
-          for (const chunk of synthesizeAnthropicSSE(anthropicResponse)) {
-            res.write(chunk);
-          }
-          res.end();
-        } else {
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify(anthropicResponse));
-        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(anthropicResponse));
 
         return;
       }
