@@ -7,16 +7,16 @@ import { PROJECTS_DIR, SESSIONS_DIR } from "./config.js";
 
 // Encode an absolute path to the project directory name format.
 // Encoding: '.' → '-', '/' → '-', so '--' in encoded = '/.'
-function encodePath(p: string): string {
+export function encodePath(p: string): string {
   return p.replace(/\./g, "DOTMARK").replace(/\//g, "-").replace(/DOTMARK/g, "-");
 }
 
 // Decode an encoded project directory name back to an absolute path.
-function decodePath(encoded: string): string {
+export function decodePath(encoded: string): string {
   return encoded.replace(/--/g, "/.").replace(/-/g, "/");
 }
 
-function formatTimestamp(ms: number): string {
+export function formatTimestamp(ms: number): string {
   const d = new Date(ms);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -64,7 +64,7 @@ function parseSessionMeta(filePath: string): { started: string; slug: string } {
 }
 
 // Extract text content from a JSONL line
-function extractText(d: Record<string, unknown>): { role: string; text: string } {
+export function extractText(d: Record<string, unknown>): { role: string; text: string } {
   const message = d.message as Record<string, unknown> | undefined;
   let content: unknown;
   let role = "";
@@ -89,7 +89,7 @@ function extractText(d: Record<string, unknown>): { role: string; text: string }
   return { role: "", text: "" };
 }
 
-function snippet(text: string, query: string, width = 150): string {
+export function snippet(text: string, query: string, width = 150): string {
   const idx = text.toLowerCase().indexOf(query.toLowerCase());
   if (idx === -1) return text.slice(0, width);
   const start = Math.max(0, idx - Math.floor(width / 3));

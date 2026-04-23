@@ -5,7 +5,7 @@ import { Command } from "commander";
 // Request transformation: Anthropic Messages API → OpenAI Chat Completions
 // ---------------------------------------------------------------------------
 
-function sanitizeToolId(id: string): string {
+export function sanitizeToolId(id: string): string {
   // Bedrock expects tool IDs to match ^[a-zA-Z0-9_-]+$
   // Replace invalid chars with underscore and ensure starts with letter
   let sanitized = id.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -15,7 +15,7 @@ function sanitizeToolId(id: string): string {
   return sanitized;
 }
 
-function transformAnthropicToOpenAI(body: Record<string, any>): Record<string, any> {
+export function transformAnthropicToOpenAI(body: Record<string, any>): Record<string, any> {
   const messages: any[] = [];
 
   // System prompt
@@ -157,7 +157,7 @@ function transformAnthropicToOpenAI(body: Record<string, any>): Record<string, a
 // Response transformation: OpenAI → Anthropic (non-streaming)
 // ---------------------------------------------------------------------------
 
-function transformOpenAIResponseToAnthropic(
+export function transformOpenAIResponseToAnthropic(
   openaiResponse: any,
   originalModel: string,
 ): any {
@@ -220,7 +220,7 @@ function transformOpenAIResponseToAnthropic(
 // Stream synthesis: Anthropic response object → Anthropic SSE
 // ---------------------------------------------------------------------------
 
-function* synthesizeAnthropicSSE(
+export function* synthesizeAnthropicSSE(
   anthropicResponse: any,
 ): Generator<string> {
   const sse = (event: string, data: any) =>
