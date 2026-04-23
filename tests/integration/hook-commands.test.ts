@@ -242,6 +242,45 @@ describe("hook enable", () => {
     expect(exitCode).toBe(1);
   });
 
+  it("enables only the targeted hook when multiple disabled hooks lack _seq", async () => {
+    // Hooks added externally (not via cc-hub add) have no _seq, so they all get seq=0
+    // in buildFlat. The bug caused all seq=0 hooks to be enabled together.
+    fs.writeFileSync(
+      process.env.CLAUDE_SETTINGS_FILE!,
+      JSON.stringify({
+        _cc_hub_disabled: [
+          { event: "Stop", type: "command", command: "echo hook-a" },
+          { event: "Stop", type: "command", command: "echo hook-b" },
+        ],
+      })
+    );
+    const cmd = await getHooksCommand();
+    // rows[0]=hook-a, rows[1]=hook-b (stable sort, both seq=0)
+    await runCommand(cmd, ["enable", "-i", "1"]);
+    const data = JSON.parse(fs.readFileSync(process.env.CLAUDE_SETTINGS_FILE!, "utf-8"));
+    expect(data._cc_hub_disabled).toHaveLength(1);
+    expect(data._cc_hub_disabled[0].command).toBe("echo hook-a");
+    const enabled = data.hooks?.Stop?.[0]?.hooks;
+    expect(enabled).toHaveLength(1);
+    expect(enabled[0].command).toBe("echo hook-b");
+  });
+
+  it("logs the correct row index when enabling a hook without _seq", async () => {
+    fs.writeFileSync(
+      process.env.CLAUDE_SETTINGS_FILE!,
+      JSON.stringify({
+        _cc_hub_disabled: [
+          { event: "Stop", type: "command", command: "echo hook-a" },
+          { event: "Stop", type: "command", command: "echo hook-b" },
+        ],
+      })
+    );
+    const cmd = await getHooksCommand();
+    const { logs } = await runCommand(cmd, ["enable", "-i", "1"]);
+    expect(logs.some((l) => l.includes("Hook 1"))).toBe(true);
+    expect(logs.some((l) => l.includes("Hook -1"))).toBe(false);
+  });
+
   it("preserves matcher when re-enabling a hook", async () => {
     const c1 = await getHooksCommand();
     await runCommand(c1, ["add", "-e", "PostToolUse", "-m", "Bash", "-c", "echo matched"]);

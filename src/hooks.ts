@@ -171,19 +171,20 @@ export function hooksCommand(): Command {
 
       const hooksRoot = data.hooks || (data.hooks = {});
       const pool = data._cc_hub_disabled!;
-      const seqsToEnable = new Set(targets.map((t) => rows[t].seq));
+      const diToTarget = new Map(targets.map((t) => [rows[t].di, t]));
 
       const remaining: HookEntry[] = [];
-      const toRestore: HookEntry[] = [];
-      for (const entry of pool) {
-        if (seqsToEnable.has(entry._seq || 0)) {
-          toRestore.push(entry);
+      const toRestore: Array<{ entry: HookEntry; t: number }> = [];
+      for (let di = 0; di < pool.length; di++) {
+        const t = diToTarget.get(di);
+        if (t !== undefined) {
+          toRestore.push({ entry: pool[di], t });
         } else {
-          remaining.push(entry);
+          remaining.push(pool[di]);
         }
       }
 
-      for (const entry of toRestore) {
+      for (const { entry, t } of toRestore) {
         const event = entry.event!;
         const matcher = entry.matcher || "";
         const hook = { type: entry.type, command: entry.command, _seq: entry._seq, ...(entry.async ? { async: true } : {}) };
@@ -195,7 +196,6 @@ export function hooksCommand(): Command {
           groups.push(grp);
         }
         grp.hooks.push(hook);
-        const t = rows.findIndex((r) => r.seq === entry._seq);
         console.log(`Hook ${t} (${event}) enabled.`);
       }
 
