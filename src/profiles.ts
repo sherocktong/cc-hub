@@ -60,19 +60,8 @@ function updateSettingsForProfile(p: Profile): void {
   const settings = readJson<SettingsData>(SETTINGS_FILE);
   const models = p.models || (p.model ? [p.model] : []);
 
-  if (models.length > 0) {
-    // If there are non-Anthropic models, use aliases in availableModels
-    // since we're mapping them via ANTHROPIC_DEFAULT_*_MODEL env vars at runtime
-      const aliases: string[] = [];
-      if (models[0]) aliases.push("sonnet");
-      if (models[1]) aliases.push("opus");
-      if (models[2]) aliases.push("haiku");
-      settings.model = aliases[0];
-      settings.availableModels = aliases;
-  } else {
-    delete settings.model;
-    delete settings.availableModels;
-  }
+  delete settings.model;
+  delete settings.availableModels;
 
   // Clean up old model env vars (runtime ones are set in execClaude)
   const envVarsToClean = [
@@ -105,16 +94,21 @@ export function profileCommand(): Command {
     .command("add")
     .description("Add or update a profile")
     .argument("<name>", "Profile name")
-    .option("-m, --model <model>", "Model ID (e.g. claude-opus-4-6) - can be used multiple times", collect, [])
+    .option("-m, --model <model>", "Model ID (e.g. claude-opus-4-6) - can be used multiple times (max 3)", collect, [])
     .option("-t, --token <token>", "API key / token")
     .option("-u, --url <url>", "Base URL (e.g. https://api.anthropic.com)")
     .option("-p, --provider <provider>", "Provider type: anthropic (default) or openai")
     .action((name: string, opts: { model?: string[]; token?: string; url?: string; provider?: string }) => {
+      const models = opts.model && opts.model.length > 0 ? opts.model : undefined;
+      if (models && models.length > 3) {
+        console.error("Error: A profile can have at most 3 models.");
+        process.exit(1);
+      }
+
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
       const profile = data.profiles[name] || {};
 
-      const models = opts.model && opts.model.length > 0 ? opts.model : undefined;
       if (models) {
         profile.models = models;
         profile.model = models[0];
@@ -133,7 +127,7 @@ export function profileCommand(): Command {
     .command("update")
     .description("Update fields of an existing profile")
     .argument("<name>", "Profile name (must already exist)")
-    .option("-m, --model <model>", "Model ID - can be used multiple times to set multiple models", collect, [])
+    .option("-m, --model <model>", "Model ID - can be used multiple times to set multiple models (max 3)", collect, [])
     .option("-d, --delete-model <model>", "Remove model ID - can be used multiple times", collect, [])
     .option("-t, --token <token>", "API key / token")
     .option("-u, --url <url>", "Base URL")
@@ -195,6 +189,13 @@ export function profileCommand(): Command {
           p.models = providedModels;
           p.model = providedModels[0];
         }
+      }
+
+      // Validate model count before saving
+      const finalModels = p.models || (p.model ? [p.model] : []);
+      if (finalModels.length > 3) {
+        console.error("Error: A profile can have at most 3 models.");
+        process.exit(1);
       }
 
       if (opts.token) p.token = opts.token;
