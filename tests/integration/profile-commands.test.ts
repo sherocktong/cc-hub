@@ -278,37 +278,4 @@ describe("profile update", () => {
 });
 
 // ---------------------------------------------------------------------------
-// profile remove-model
-// ---------------------------------------------------------------------------
-
-describe("profile remove-model", () => {
-  beforeEach(setup);
-  afterEach(teardown);
-
-  it("removes specified model from the list", async () => {
-    const c1 = await getProfileCommand();
-    await runCommand(c1, ["add", "dev", "-m", "a", "-m", "b", "-m", "c"]);
-    const c2 = await getProfileCommand();
-    await runCommand(c2, ["remove-model", "dev", "-m", "b"]);
-    const data = JSON.parse(fs.readFileSync(process.env.CLAUDE_PROFILES_FILE!, "utf-8"));
-    expect(data.profiles["dev"].models).toEqual(["a", "c"]);
-  });
-
-  it("removes all models when all are specified", async () => {
-    const c1 = await getProfileCommand();
-    await runCommand(c1, ["add", "dev", "-m", "only"]);
-    const c2 = await getProfileCommand();
-    await runCommand(c2, ["remove-model", "dev", "-m", "only"]);
-    const data = JSON.parse(fs.readFileSync(process.env.CLAUDE_PROFILES_FILE!, "utf-8"));
-    expect(data.profiles["dev"].models).toBeUndefined();
-    expect(data.profiles["dev"].model).toBeUndefined();
-  });
-
-  it("exits with code 1 when no -m flag provided", async () => {
-    const c1 = await getProfileCommand();
-    await runCommand(c1, ["add", "dev", "-m", "m"]);
-    const c2 = await getProfileCommand();
-    const { exitCode } = await runCommand(c2, ["remove-model", "dev"]);
-    expect(exitCode).toBe(1);
-  });
-});
+// profile list

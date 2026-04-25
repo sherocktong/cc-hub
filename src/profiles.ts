@@ -205,46 +205,6 @@ export function profileCommand(): Command {
       console.log(`Profile '${name}' updated.`);
     });
 
-  // --- remove-model ---
-  profile
-    .command("remove-model")
-    .description("Remove specific models from a profile")
-    .argument("<name>", "Profile name")
-    .option("-m, --model <model>", "Model ID to remove - can be used multiple times", collect, [])
-    .action((name: string, opts: { model: string[] }) => {
-      ensureProfilesFile();
-      const data = readJson<ProfilesData>(PROFILES_FILE);
-      if (!data.profiles[name]) {
-        console.error(`Profile '${name}' not found.`);
-        process.exit(1);
-      }
-
-      const p = data.profiles[name];
-      const toRemove = new Set(opts.model);
-
-      if (toRemove.size === 0) {
-        console.error("No models specified to remove. Use -m <model> to specify models.");
-        process.exit(1);
-      }
-
-      const currentModels = p.models || (p.model ? [p.model] : []);
-      const newModels = currentModels.filter(m => !toRemove.has(m));
-
-      if (newModels.length === 0) {
-        delete p.models;
-        delete p.model;
-        console.log(`Removed all models from profile '${name}'.`);
-      } else {
-        const removedCount = currentModels.length - newModels.length;
-        p.models = newModels;
-        p.model = newModels[0];
-        console.log(`Removed ${removedCount} model(s) from profile '${name}'.`);
-        console.log(`Remaining models: ${newModels.join(", ")}`);
-      }
-
-      writeJson(PROFILES_FILE, data);
-    });
-
   // --- list ---
   profile
     .command("list")
@@ -334,6 +294,32 @@ export function profileCommand(): Command {
       delete data.profiles[name];
       writeJson(PROFILES_FILE, data);
       console.log(`Profile '${name}' removed.`);
+    });
+
+  // --- rename ---
+  profile
+    .command("rename")
+    .description("Rename a profile")
+    .argument("<oldName>", "Current profile name")
+    .argument("<newName>", "New profile name")
+    .action((oldName: string, newName: string) => {
+      ensureProfilesFile();
+      const data = readJson<ProfilesData>(PROFILES_FILE);
+      if (!data.profiles[oldName]) {
+        console.error(`Profile '${oldName}' not found.`);
+        process.exit(1);
+      }
+      if (data.profiles[newName]) {
+        console.error(`Profile '${newName}' already exists. Choose a different name.`);
+        process.exit(1);
+      }
+      data.profiles[newName] = data.profiles[oldName];
+      delete data.profiles[oldName];
+      if (data.default === oldName) {
+        data.default = newName;
+      }
+      writeJson(PROFILES_FILE, data);
+      console.log(`Profile '${oldName}' renamed to '${newName}'.`);
     });
 
   // --- default ---

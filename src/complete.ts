@@ -25,10 +25,10 @@ _cc-hub() {
   profile_subcmds=(
     'add:Add or update a profile'
     'update:Update fields of an existing profile'
-    'remove-model:Remove specific models from a profile'
     'list:List all profiles'
     'view:View full details of a profile'
     'remove:Remove a profile'
+    'rename:Rename a profile'
     'default:Set the default profile'
   )
 
@@ -83,8 +83,12 @@ _cc-hub() {
         profile)
           if (( CURRENT == 2 )); then
             _describe -t profile-subcmds 'profile subcommand' profile_subcmds
-          elif [[ $words[2] == "view" || $words[2] == "remove" || $words[2] == "default" || $words[2] == "remove-model" ]]; then
+          elif [[ $words[2] == "view" || $words[2] == "remove" || $words[2] == "default" ]]; then
             _cc_hub_profiles
+          elif [[ $words[2] == "rename" ]]; then
+            if (( CURRENT == 3 )); then
+              _cc_hub_profiles
+            fi
           elif [[ $words[2] == "update" ]]; then
             if (( CURRENT == 3 )); then
               _cc_hub_profiles
@@ -176,7 +180,7 @@ _cc-hub() {
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
   commands="profile use run hook session provider complete help"
 
-  local profile_subcmds="add update remove-model list view remove default"
+  local profile_subcmds="add update list view remove rename default"
   local provider_subcmds="list"
   local provider_types="anthropic openai"
   local hooks_subcmds="list add remove enable disable"
@@ -194,7 +198,9 @@ _cc-hub() {
     profile)
       if [[ \${COMP_CWORD} -eq 2 ]]; then
         COMPREPLY=($(compgen -W "$profile_subcmds" -- "$cur"))
-      elif [[ "$prev" == "view" || "$prev" == "remove" || "$prev" == "default" || "$prev" == "remove-model" ]]; then
+      elif [[ "$prev" == "view" || "$prev" == "remove" || "$prev" == "default" ]]; then
+        _cc-hub_profiles
+      elif [[ "$prev" == "rename" ]]; then
         _cc-hub_profiles
       elif [[ "$prev" == "profile" ]]; then
         COMPREPLY=($(compgen -W "$profile_subcmds" -- "$cur"))
