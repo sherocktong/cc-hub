@@ -28,8 +28,8 @@ function formatModels(p: Profile): string {
       if (!isAnthropicModel(m)) {
         // Non-Anthropic model - show with alias
         const aliasIndex = nonAnthropicModels.indexOf(m);
-        if (aliasIndex === 0) parts.push(`${m} (opus)`);
-        else if (aliasIndex === 1) parts.push(`${m} (sonnet)`);
+        if (aliasIndex === 0) parts.push(`${m} (sonnet)`);
+        else if (aliasIndex === 1) parts.push(`${m} (opus)`);
         else if (aliasIndex === 2) parts.push(`${m} (haiku)`);
         else parts.push(m);
       } else {
@@ -59,23 +59,16 @@ function updateSettingsForProfile(p: Profile): void {
   ensureSettingsFile();
   const settings = readJson<SettingsData>(SETTINGS_FILE);
   const models = p.models || (p.model ? [p.model] : []);
-  const nonAnthropicModels = models.filter(m => !isAnthropicModel(m));
 
   if (models.length > 0) {
-    settings.model = models[0];
-
     // If there are non-Anthropic models, use aliases in availableModels
     // since we're mapping them via ANTHROPIC_DEFAULT_*_MODEL env vars at runtime
-    if (nonAnthropicModels.length > 0) {
-    const aliases: string[] = [];
-      if (nonAnthropicModels[0]) aliases.push("opus");
-      if (nonAnthropicModels[1]) aliases.push("sonnet");
-      if (nonAnthropicModels[2]) aliases.push("haiku");
-    settings.availableModels = aliases;
-    } else {
-      // Pure Anthropic models - use actual model IDs
-      settings.availableModels = models;
-    }
+      const aliases: string[] = [];
+      if (models[0]) aliases.push("sonnet");
+      if (models[1]) aliases.push("opus");
+      if (models[2]) aliases.push("haiku");
+      settings.model = aliases[0];
+      settings.availableModels = aliases;
   } else {
     delete settings.model;
     delete settings.availableModels;
@@ -311,8 +304,8 @@ export function profileCommand(): Command {
             if (!isAnthropicModel(m)) {
               const aliasIndex = nonAnthropicModels.indexOf(m);
               let alias = "";
-              if (aliasIndex === 0) alias = " (opus)";
-              else if (aliasIndex === 1) alias = " (sonnet)";
+              if (aliasIndex === 0) alias = " (sonnet)";
+              else if (aliasIndex === 1) alias = " (opus)";
               else if (aliasIndex === 2) alias = " (haiku)";
               console.log(`  - ${m}${alias}`);
             } else {
@@ -388,24 +381,23 @@ function execClaude(profileName: string, p: Profile, extraArgs: string[]): never
   };
 
   // Set up model alias env vars for non-Anthropic models
-  const nonAnthropicModels = models.filter(m => !isAnthropicModel(m));
-  if (nonAnthropicModels.length > 0) {
-    if (nonAnthropicModels[0]) {
-      env.ANTHROPIC_DEFAULT_OPUS_MODEL = nonAnthropicModels[0];
-      env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME = nonAnthropicModels[0];
-      env.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[0]}`;
+  if (models.length > 0) {
+    if (models[0]) {
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL = models[0];
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME = models[0];
+      env.ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION = `Custom: ${models[0]}`;
     }
-    if (nonAnthropicModels[1]) {
-      env.ANTHROPIC_DEFAULT_SONNET_MODEL = nonAnthropicModels[1];
-      env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME = nonAnthropicModels[1];
-      env.ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[1]}`;
+    if (models[1]) {
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL = models[1];
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME = models[1];
+      env.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION = `Custom: ${models[1]}`;
     }
-    if (nonAnthropicModels[2]) {
-      env.ANTHROPIC_DEFAULT_HAIKU_MODEL = nonAnthropicModels[2];
-      env.ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME = nonAnthropicModels[2];
-      env.ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION = `Custom: ${nonAnthropicModels[2]}`;
+    if (models[2]) {
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL = models[2];
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME = models[2];
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION = `Custom: ${models[2]}`;
     }
-    env.ANTHROPIC_CUSTOM_MODEL_OPTION = nonAnthropicModels[0];
+    env.ANTHROPIC_CUSTOM_MODEL_OPTION = models[0];
   }
 
   // Remove ANTHROPIC_API_KEY so it doesn't conflict with ANTHROPIC_AUTH_TOKEN
