@@ -2,6 +2,8 @@
 
 Manage Claude CLI profiles, hooks, and sessions — one tool, all in one place.
 
+> **Note:** Currently macOS only.
+
 ## Install
 
 ```bash

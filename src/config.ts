@@ -13,6 +13,7 @@ export const SESSIONS_DIR = path.join(CLAUDE_DIR, "sessions");
 const DESKTOP_SUPPORT_DIR = path.join(os.homedir(), "Library/Application Support/Claude-3p");
 export const DESKTOP_CONFIG_LIBRARY = path.join(DESKTOP_SUPPORT_DIR, "configLibrary");
 export const DESKTOP_META_FILE = path.join(DESKTOP_CONFIG_LIBRARY, "_meta.json");
+export const DESKTOP_SESSIONS_DIR = path.join(DESKTOP_SUPPORT_DIR, "local-agent-mode-sessions");
 
 export function isDesktopAppInstalled(): boolean {
   return fs.existsSync(DESKTOP_SUPPORT_DIR);
