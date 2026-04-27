@@ -9,6 +9,46 @@ export const CLAUDE_JSON = path.join(os.homedir(), ".claude.json");
 export const PROJECTS_DIR = path.join(CLAUDE_DIR, "projects");
 export const SESSIONS_DIR = path.join(CLAUDE_DIR, "sessions");
 
+// Desktop app paths (macOS only for now)
+const DESKTOP_SUPPORT_DIR = path.join(os.homedir(), "Library/Application Support/Claude-3p");
+export const DESKTOP_CONFIG_LIBRARY = path.join(DESKTOP_SUPPORT_DIR, "configLibrary");
+export const DESKTOP_META_FILE = path.join(DESKTOP_CONFIG_LIBRARY, "_meta.json");
+
+export function isDesktopAppInstalled(): boolean {
+  return fs.existsSync(DESKTOP_SUPPORT_DIR);
+}
+
+export function findDesktopClaudeBinary(): string | undefined {
+  const claudeCodeDir = path.join(DESKTOP_SUPPORT_DIR, "claude-code");
+  if (!fs.existsSync(claudeCodeDir)) return undefined;
+
+  let versions: string[];
+  try {
+    versions = fs.readdirSync(claudeCodeDir).filter((d) =>
+      fs.existsSync(path.join(claudeCodeDir, d, "claude.app", "Contents", "MacOS", "claude"))
+    );
+  } catch {
+    return undefined;
+  }
+
+  if (versions.length === 0) return undefined;
+
+  // Sort by semver descending and pick latest
+  versions.sort((a, b) => {
+    const parse = (v: string) => v.split(".").map((n) => parseInt(n, 10));
+    const av = parse(a);
+    const bv = parse(b);
+    for (let i = 0; i < Math.max(av.length, bv.length); i++) {
+      const an = av[i] || 0;
+      const bn = bv[i] || 0;
+      if (an !== bn) return bn - an;
+    }
+    return 0;
+  });
+
+  return path.join(claudeCodeDir, versions[0], "claude.app", "Contents", "MacOS", "claude");
+}
+
 export function ensureFile(filePath: string, defaultContent: string): void {
   if (!fs.existsSync(filePath)) {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });

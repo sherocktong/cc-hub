@@ -4,11 +4,15 @@ import {
   PROFILES_FILE,
   SETTINGS_FILE,
   CLAUDE_JSON,
+  DESKTOP_CONFIG_LIBRARY,
+  DESKTOP_META_FILE,
   ensureProfilesFile,
   ensureSettingsFile,
   readJson,
   fixJsonFile,
   writeJson,
+  isDesktopAppInstalled,
+  findDesktopClaudeBinary,
 } from "./config.js";
 import type { ProfilesData, Profile, SettingsData, ProviderType } from "./types.js";
 import { startOpenAIProxy } from "./provider.js";
@@ -53,6 +57,148 @@ function isAnthropicModel(model: string): boolean {
   if (anthropicAliases.includes(lower)) return true;
   if (lower.startsWith("claude-")) return true;
   return false;
+}
+
+// --- Desktop profile sync helpers ---
+
+import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+
+interface DesktopMeta {
+  appliedId?: string;
+  entries?: Array<{ id: string; name: string }>;
+}
+
+interface DesktopProfileData {
+  inferenceProvider?: string;
+  inferenceGatewayBaseUrl?: string;
+  inferenceGatewayApiKey?: string;
+  inferenceGatewayAuthScheme?: string;
+  inferenceModels?: Array<{ name: string; supports1m: boolean }>;
+}
+
+function toDesktopProfile(p: Profile): DesktopProfileData {
+  const models = p.models || (p.model ? [p.model] : []);
+  const isAnthropic = p.provider === "anthropic" || (!p.provider && !p.url);
+
+  if (isAnthropic && !p.url) {
+    return {
+      inferenceProvider: "1p",
+      inferenceModels: models.map((m) => ({ name: m, supports1m: true })),
+    };
+  }
+
+  return {
+    inferenceProvider: "gateway",
+    inferenceGatewayBaseUrl: p.url || undefined,
+    inferenceGatewayApiKey: p.token || undefined,
+    inferenceGatewayAuthScheme: p.provider === "openai" ? "bearer" : "x-api-key",
+    inferenceModels: models.map((m) => ({ name: m, supports1m: true })),
+  };
+}
+
+function readDesktopMeta(): DesktopMeta {
+  if (!fs.existsSync(DESKTOP_META_FILE)) return {};
+  try {
+    return readJson<DesktopMeta>(DESKTOP_META_FILE);
+  } catch {
+    return {};
+  }
+}
+
+function writeDesktopMeta(meta: DesktopMeta): void {
+  writeJson(DESKTOP_META_FILE, meta);
+}
+
+function writeDesktopProfile(id: string, data: DesktopProfileData): void {
+  const filePath = path.join(DESKTOP_CONFIG_LIBRARY, `${id}.json`);
+  writeJson(filePath, data);
+}
+
+function removeDesktopProfile(id: string): void {
+  const filePath = path.join(DESKTOP_CONFIG_LIBRARY, `${id}.json`);
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+  }
+}
+
+function syncProfileToDesktop(name: string, p: Profile): void {
+  if (!isDesktopAppInstalled()) return;
+  if (!fs.existsSync(DESKTOP_CONFIG_LIBRARY)) {
+    fs.mkdirSync(DESKTOP_CONFIG_LIBRARY, { recursive: true });
+  }
+
+  const meta = readDesktopMeta();
+  const entries = meta.entries || [];
+  let id = p.desktopId;
+
+  if (!id) {
+    // Try to find an existing desktop entry with the same name
+    const existingByName = entries.find((e) => e.name === name);
+    if (existingByName) {
+      id = existingByName.id;
+    } else {
+      id = randomUUID();
+    }
+    p.desktopId = id;
+  }
+
+  const existingIndex = entries.findIndex((e) => e.id === id);
+  if (existingIndex !== -1) {
+    entries[existingIndex].name = name;
+  } else {
+    entries.push({ id, name });
+  }
+
+  meta.entries = entries;
+  writeDesktopMeta(meta);
+  writeDesktopProfile(id, toDesktopProfile(p));
+}
+
+function removeProfileFromDesktop(name: string, p: Profile): void {
+  if (!isDesktopAppInstalled() || !p.desktopId) return;
+
+  const meta = readDesktopMeta();
+  if (meta.entries) {
+    meta.entries = meta.entries.filter((e) => e.id !== p.desktopId);
+  }
+  if (meta.appliedId === p.desktopId) {
+    delete meta.appliedId;
+  }
+  writeDesktopMeta(meta);
+  removeDesktopProfile(p.desktopId);
+}
+
+function setDesktopActiveProfile(p: Profile): void {
+  if (!isDesktopAppInstalled() || !p.desktopId) return;
+  const meta = readDesktopMeta();
+  meta.appliedId = p.desktopId;
+  const entries = meta.entries || [];
+  if (!entries.some((e) => e.id === p.desktopId)) {
+    entries.push({ id: p.desktopId, name: "unknown" });
+    meta.entries = entries;
+  }
+  writeDesktopMeta(meta);
+}
+
+function resolveClaudeBinary(): string {
+  // Try global CLI first
+  try {
+    const result = spawnSync("which", ["claude"], { encoding: "utf-8" });
+    if (result.status === 0 && result.stdout.trim()) {
+      return "claude";
+    }
+  } catch {
+    // fall through
+  }
+
+  const desktopBinary = findDesktopClaudeBinary();
+  if (desktopBinary) return desktopBinary;
+
+  console.error("Error: Could not find Claude Code CLI.");
+  console.error("Install it globally or install the Claude Code desktop app.");
+  process.exit(1);
 }
 
 function updateSettingsForProfile(p: Profile): void {
@@ -118,6 +264,7 @@ export function profileCommand(): Command {
       if (opts.provider) profile.provider = opts.provider as ProviderType;
 
       data.profiles[name] = profile;
+      syncProfileToDesktop(name, profile);
       writeJson(PROFILES_FILE, data);
       console.log(`Profile '${name}' saved.`);
     });
@@ -202,6 +349,7 @@ export function profileCommand(): Command {
       if (opts.url) p.url = opts.url;
       if (opts.provider) p.provider = opts.provider as ProviderType;
 
+      syncProfileToDesktop(name, p);
       writeJson(PROFILES_FILE, data);
       console.log(`Profile '${name}' updated.`);
     });
@@ -228,9 +376,11 @@ export function profileCommand(): Command {
       for (const name of names) {
         const p = profiles[name];
         const marker = name === def ? "* " : "  ";
+        const desktopMarker = p.desktopId ? " [desktop]" : "";
+        const displayName = (name + desktopMarker).padEnd(20);
         console.log(fmt(
           marker,
-          name,
+          displayName,
           formatModels(p),
           maskToken(p.token || ""),
           p.provider || "anthropic",
@@ -292,6 +442,7 @@ export function profileCommand(): Command {
         console.error(`Profile '${name}' not found.`);
         process.exit(1);
       }
+      removeProfileFromDesktop(name, data.profiles[name]);
       delete data.profiles[name];
       writeJson(PROFILES_FILE, data);
       console.log(`Profile '${name}' removed.`);
@@ -336,8 +487,41 @@ export function profileCommand(): Command {
         process.exit(1);
       }
       data.default = name;
+      setDesktopActiveProfile(data.profiles[name]);
       writeJson(PROFILES_FILE, data);
       console.log(`Default profile set to '${name}'.`);
+    });
+
+  // --- sync ---
+  profile
+    .command("sync")
+    .description("Synchronize all CLI profiles to the Claude desktop app")
+    .action(() => {
+      if (!isDesktopAppInstalled()) {
+        console.error("Claude desktop app is not installed.");
+        process.exit(1);
+      }
+
+      ensureProfilesFile();
+      const data = readJson<ProfilesData>(PROFILES_FILE);
+      const names = Object.keys(data.profiles);
+
+      if (names.length === 0) {
+        console.log("No profiles to sync.");
+        return;
+      }
+
+      if (!fs.existsSync(DESKTOP_CONFIG_LIBRARY)) {
+        fs.mkdirSync(DESKTOP_CONFIG_LIBRARY, { recursive: true });
+      }
+
+      for (const name of names) {
+        const p = data.profiles[name];
+        syncProfileToDesktop(name, p);
+      }
+
+      writeJson(PROFILES_FILE, data);
+      console.log(`Synced ${names.length} profile(s) to the desktop app.`);
     });
 
   return profile;
@@ -354,7 +538,8 @@ function execClaude(profileName: string, p: Profile, extraArgs: string[]): never
   const models = p.models || (p.model ? [p.model] : []);
   const firstModel = models[0];
 
-  const cmd = ["claude"];
+  const binary = resolveClaudeBinary();
+  const cmd = [binary];
   if (firstModel) cmd.push("--model", firstModel);
   cmd.push(...extraArgs);
 
@@ -438,6 +623,7 @@ export function useCommand(): Command {
       }
 
       data.default = name;
+      setDesktopActiveProfile(data.profiles[name]);
       writeJson(PROFILES_FILE, data);
       console.log(`Default profile set to '${name}'.`);
     });

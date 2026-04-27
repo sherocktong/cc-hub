@@ -6,6 +6,7 @@ export interface Profile {
   token?: string;
   url?: string;
   provider?: ProviderType;
+  desktopId?: string;
 }
 
 export interface ProfilesData {

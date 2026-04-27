@@ -30,6 +30,7 @@ _cc-hub() {
     'remove:Remove a profile'
     'rename:Rename a profile'
     'default:Set the default profile'
+    'sync:Synchronize all CLI profiles to the desktop app'
   )
 
   local -a hooks_subcmds
@@ -180,7 +181,7 @@ _cc-hub() {
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
   commands="profile use run hook session provider complete help"
 
-  local profile_subcmds="add update list view remove rename default"
+  local profile_subcmds="add update list view remove rename default sync"
   local provider_subcmds="list"
   local provider_types="anthropic openai"
   local hooks_subcmds="list add remove enable disable"
