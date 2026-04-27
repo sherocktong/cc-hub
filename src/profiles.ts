@@ -404,7 +404,8 @@ export function profileCommand(): Command {
         process.exit(1);
       }
       if (opts.json) {
-        console.log(JSON.stringify({ name, ...p }, null, 2));
+        const { desktopId, ...rest } = p;
+        console.log(JSON.stringify({ name, ...rest }, null, 2));
       } else {
         console.log(`Name:     ${name}`);
         console.log(`Model:    ${p.model || "(unset)"}`);
