@@ -93,7 +93,7 @@ function toDesktopProfile(p: Profile): DesktopProfileData {
     inferenceProvider: "gateway",
     inferenceGatewayBaseUrl: p.url || undefined,
     inferenceGatewayApiKey: p.token || undefined,
-    inferenceGatewayAuthScheme: p.provider === "openai" ? "bearer" : "x-api-key",
+    inferenceGatewayAuthScheme: "bearer",
     inferenceModels: models.map((m) => ({ name: m, supports1m: true })),
   };
 }
