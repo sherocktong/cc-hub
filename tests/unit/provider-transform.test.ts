@@ -4,7 +4,7 @@ import {
   transformAnthropicToOpenAI,
   transformOpenAIResponseToAnthropic,
   synthesizeAnthropicSSE,
-} from "../../src/provider.js";
+} from "../../src/provider/transform.js";
 
 // ---------------------------------------------------------------------------
 // sanitizeToolId

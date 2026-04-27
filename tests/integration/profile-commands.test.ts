@@ -51,7 +51,7 @@ async function runCommand(cmd: Command, args: string[]) {
 }
 
 async function getProfileCommand() {
-  const mod = await import("../../src/profiles.js");
+  const mod = await import("../../src/profiles/index.js");
   return mod.profileCommand();
 }
 

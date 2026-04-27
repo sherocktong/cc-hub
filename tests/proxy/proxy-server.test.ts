@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi, beforeEach } from "vitest";
-import { startOpenAIProxy } from "../../src/provider.js";
+import { startOpenAIProxy } from "../../src/provider/server.js";
 
 const FAKE_MODEL = "gpt-4o";
 const FAKE_KEY = "sk-test";

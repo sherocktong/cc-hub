@@ -50,7 +50,7 @@ async function runCommand(cmd: Command, args: string[]) {
 }
 
 async function getHooksCommand() {
-  const mod = await import("../../src/hooks.js");
+  const mod = await import("../../src/hooks/index.js");
   return mod.hooksCommand();
 }
 

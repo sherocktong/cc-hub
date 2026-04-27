@@ -1,11 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { encodePath, decodePath } from "../../src/sessions/codec.js";
 import {
-  encodePath,
-  decodePath,
   formatTimestamp,
   snippet,
   extractText,
-} from "../../src/sessions.js";
+} from "../../src/sessions/utils.js";
 
 // ---------------------------------------------------------------------------
 // encodePath / decodePath
@@ -25,6 +24,14 @@ describe("encodePath", () => {
     expect(encoded).not.toContain("/");
     expect(encoded).not.toContain(".");
   });
+
+  it("replaces Windows backslashes with dashes", () => {
+    expect(encodePath("C:\\Users\\foo\\project")).toBe("C-Users-foo-project");
+  });
+
+  it("strips Windows drive colons", () => {
+    expect(encodePath("C:\\Users\\foo\\.project")).toBe("C-Users-foo--project");
+  });
 });
 
 describe("decodePath", () => {
@@ -35,19 +42,50 @@ describe("decodePath", () => {
   it("decodes a leading single dash to a slash", () => {
     expect(decodePath("-home-user-project")).toBe("/home/user/project");
   });
+
+  it("uses backslashes on Windows", () => {
+    const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
+    try {
+      expect(decodePath("C-Users-foo--project")).toBe("C:\\Users\\foo\\.project");
+    } finally {
+      platformSpy.mockRestore();
+    }
+  });
 });
 
 describe("encodePath <-> decodePath round-trip", () => {
   // Note: paths with literal hyphens cannot round-trip (hyphens encode identically to slashes)
-  const paths = [
+  const unixPaths = [
     "/Users/alice/Documents/project",
     "/home/user/.claude",
     "/tmp/testdir",
   ];
 
-  for (const p of paths) {
-    it(`round-trips ${p}`, () => {
-      expect(decodePath(encodePath(p))).toBe(p);
+  for (const p of unixPaths) {
+    it(`round-trips ${p} on Unix`, () => {
+      const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
+      try {
+        expect(decodePath(encodePath(p))).toBe(p);
+      } finally {
+        platformSpy.mockRestore();
+      }
+    });
+  }
+
+  const windowsPaths = [
+    "C:\\Users\\alice\\Documents\\project",
+    "C:\\Users\\foo\\.claude",
+    "D:\\tmp\\testdir",
+  ];
+
+  for (const p of windowsPaths) {
+    it(`round-trips ${p} on Windows`, () => {
+      const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
+      try {
+        expect(decodePath(encodePath(p))).toBe(p);
+      } finally {
+        platformSpy.mockRestore();
+      }
     });
   }
 });

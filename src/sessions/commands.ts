@@ -1,107 +1,18 @@
 import { Command } from "commander";
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
-import { createInterface } from "node:readline";
-import { PROJECTS_DIR, SESSIONS_DIR, DESKTOP_SESSIONS_DIR, isDesktopAppInstalled } from "./config.js";
-
-// Encode an absolute path to the project directory name format.
-// Encoding: '.' → '-', '/' → '-', so '--' in encoded = '/.'
-export function encodePath(p: string): string {
-  return p.replace(/\./g, "DOTMARK").replace(/\//g, "-").replace(/DOTMARK/g, "-");
-}
-
-// Decode an encoded project directory name back to an absolute path.
-export function decodePath(encoded: string): string {
-  return encoded.replace(/--/g, "/.").replace(/-/g, "/");
-}
-
-export function formatTimestamp(ms: number): string {
-  const d = new Date(ms);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function findProjectDir(query: string): string | null {
-  const encoded = encodePath(query);
-  if (fs.existsSync(path.join(PROJECTS_DIR, encoded))) return encoded;
-
-  try {
-    const dirs = fs.readdirSync(PROJECTS_DIR);
-    const match = dirs.find((d) => d.toLowerCase().includes(query.toLowerCase()));
-    return match || null;
-  } catch {
-    return null;
-  }
-}
-
-// Parse first timestamp and slug from a JSONL session file
-function parseSessionMeta(filePath: string): { started: string; slug: string } {
-  let started = "?";
-  let slug = "";
-  let customTitle = "";
-  try {
-    const lines = fs.readFileSync(filePath, "utf-8").split("\n");
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const d = JSON.parse(line);
-        if (started === "?") {
-          const ts = d.timestamp;
-          if (ts) {
-            const dt = typeof ts === "number"
-              ? new Date(ts)
-              : new Date(String(ts).replace("Z", "+00:00"));
-            started = formatTimestamp(dt.getTime());
-          }
-        }
-        if (!slug) slug = d.slug || "";
-        if (d.type === "custom-title") customTitle = d.customTitle || "";
-      } catch { /* skip bad lines */ }
-    }
-  } catch { /* skip unreadable files */ }
-  return { started, slug: customTitle || slug };
-}
-
-// Extract text content from a JSONL line
-export function extractText(d: Record<string, unknown>): { role: string; text: string } {
-  const message = d.message as Record<string, unknown> | undefined;
-  let content: unknown;
-  let role = "";
-
-  if (message) {
-    content = message.content;
-    role = (message.role as string) || "";
-  } else {
-    content = d.content;
-    role = (d.type as string) || (d.operation as string) || "";
-  }
-
-  if (Array.isArray(content)) {
-    for (const p of content) {
-      if (typeof p === "object" && p !== null && (p as Record<string, unknown>).type === "text") {
-        return { role, text: (p as Record<string, unknown>).text as string };
-      }
-    }
-  } else if (typeof content === "string") {
-    return { role, text: content };
-  }
-  return { role: "", text: "" };
-}
-
-export function snippet(text: string, query: string, width = 150): string {
-  const idx = text.toLowerCase().indexOf(query.toLowerCase());
-  if (idx === -1) return text.slice(0, width);
-  const start = Math.max(0, idx - Math.floor(width / 3));
-  const end = Math.min(text.length, start + width);
-  const prefix = start > 0 ? "..." : "";
-  const suffix = end < text.length ? "..." : "";
-  return prefix + text.slice(start, end) + suffix;
-}
+import { PROJECTS_DIR, SESSIONS_DIR, CLAUDE_DIR, isDesktopAppInstalled } from "../config.js";
+import { createDesktopApp } from "../platform/index.js";
+import { encodePath, decodePath } from "./codec.js";
+import { getDirSize, formatSize } from "./stats.js";
+import { formatTimestamp, findProjectDir, parseSessionMeta, extractText, snippet } from "./utils.js";
 
 export function sessionCommand(): Command {
   const session = new Command("session")
     .description("Manage Claude Code sessions");
+
+  const desktopApp = createDesktopApp();
+  const DESKTOP_SESSIONS_DIR = desktopApp.getSessionsDir() || "";
 
   // --- list ---
   session
@@ -120,7 +31,6 @@ export function sessionCommand(): Command {
         return;
       }
 
-      // Sort by modification time (most recent first)
       dirs.sort((a, b) => {
         const statA = fs.statSync(path.join(PROJECTS_DIR, a));
         const statB = fs.statSync(path.join(PROJECTS_DIR, b));
@@ -278,7 +188,7 @@ export function sessionCommand(): Command {
                 if (match) {
                   if (!found) {
                     const relPath = path.relative(baseDir, fullPath);
-                    const projEnc = relPath.split("/")[0];
+                    const projEnc = relPath.split(path.sep)[0];
                     const sessionId = path.basename(fullPath, ".jsonl");
                     const projName = label ? projEnc : decodePath(projEnc);
                     console.log(`${label}[${projName}  →  ${sessionId}]`);
@@ -298,7 +208,6 @@ export function sessionCommand(): Command {
                     console.log(`  line ${lineno + 1}: ${line.slice(0, 140)}`);
                   }
 
-                  // Show max 5 matches per file
                   const matchCount = lines.slice(0, lineno + 1).filter((l, i) => {
                     if (i > lineno) return false;
                     return opts.ignoreCase
@@ -429,19 +338,15 @@ export function sessionCommand(): Command {
       console.log(`Active procs:    ${nActive}  (in ${SESSIONS_DIR})`);
       console.log("");
 
-      try {
-        const totalSize = execSync(`du -sh "${path.join(process.env.CLAUDE_DIR || path.join(process.env.HOME || "", ".claude"))}" 2>/dev/null`, { encoding: "utf-8" }).trim().split(/\s+/)[0];
-        const projSize = execSync(`du -sh "${PROJECTS_DIR}" 2>/dev/null`, { encoding: "utf-8" }).trim().split(/\s+/)[0];
-        const desktopSize = isDesktopAppInstalled()
-          ? execSync(`du -sh "${DESKTOP_SESSIONS_DIR}" 2>/dev/null`, { encoding: "utf-8" }).trim().split(/\s+/)[0]
-          : null;
-        console.log("Storage:");
-        console.log(`  Total:         ${totalSize}`);
-        console.log(`  Projects:      ${projSize}`);
-        if (desktopSize) {
-          console.log(`  Desktop:       ${desktopSize}`);
-        }
-      } catch { /* du not available */ }
+      const totalSize = formatSize(getDirSize(CLAUDE_DIR));
+      const projSize = formatSize(getDirSize(PROJECTS_DIR));
+      const desktopSize = isDesktopAppInstalled() ? formatSize(getDirSize(DESKTOP_SESSIONS_DIR)) : null;
+      console.log("Storage:");
+      console.log(`  Total:         ${totalSize}`);
+      console.log(`  Projects:      ${projSize}`);
+      if (desktopSize) {
+        console.log(`  Desktop:       ${desktopSize}`);
+      }
     });
 
   // --- clean ---

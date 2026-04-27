@@ -1,21 +1,15 @@
 import { Command } from "commander";
-import { spawnSync, spawn } from "node:child_process";
 import {
   PROFILES_FILE,
-  SETTINGS_FILE,
   CLAUDE_JSON,
-  DESKTOP_CONFIG_LIBRARY,
-  DESKTOP_META_FILE,
   ensureProfilesFile,
-  ensureSettingsFile,
   readJson,
-  fixJsonFile,
   writeJson,
-  isDesktopAppInstalled,
-  findDesktopClaudeBinary,
-} from "./config.js";
-import type { ProfilesData, Profile, SettingsData, ProviderType } from "./types.js";
-import { startOpenAIProxy } from "./provider.js";
+  fixJsonFile,
+} from "../config.js";
+import type { ProfilesData, Profile, ProviderType } from "../types.js";
+import { createProfileSyncer } from "../platform/index.js";
+import { execClaude } from "./runner.js";
 
 function maskToken(token: string): string {
   if (!token) return "(unset)";
@@ -30,14 +24,12 @@ function formatModels(p: Profile): string {
 
     p.models.forEach((m, i) => {
       if (!isAnthropicModel(m)) {
-        // Non-Anthropic model - show with alias
         const aliasIndex = nonAnthropicModels.indexOf(m);
         if (aliasIndex === 0) parts.push(`${m} (sonnet)`);
         else if (aliasIndex === 1) parts.push(`${m} (opus)`);
         else if (aliasIndex === 2) parts.push(`${m} (haiku)`);
         else parts.push(m);
       } else {
-        // Anthropic model - show as-is
         parts.push(m);
       }
     });
@@ -59,190 +51,24 @@ function isAnthropicModel(model: string): boolean {
   return false;
 }
 
-// --- Desktop profile sync helpers ---
-
-import { randomUUID } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-
-interface DesktopMeta {
-  appliedId?: string;
-  entries?: Array<{ id: string; name: string }>;
-}
-
-interface DesktopProfileData {
-  inferenceProvider?: string;
-  inferenceGatewayBaseUrl?: string;
-  inferenceGatewayApiKey?: string;
-  inferenceGatewayAuthScheme?: string;
-  inferenceModels?: Array<{ name: string; supports1m: boolean }>;
-}
-
-function toDesktopProfile(p: Profile): DesktopProfileData {
-  const models = p.models || (p.model ? [p.model] : []);
-  const isAnthropic = p.provider === "anthropic" || (!p.provider && !p.url);
-
-  if (isAnthropic && !p.url) {
-    return {
-      inferenceProvider: "1p",
-      inferenceModels: models.map((m) => ({ name: m, supports1m: true })),
-    };
-  }
-
-  return {
-    inferenceProvider: "gateway",
-    inferenceGatewayBaseUrl: p.url || undefined,
-    inferenceGatewayApiKey: p.token || undefined,
-    inferenceGatewayAuthScheme: "bearer",
-    inferenceModels: models.map((m) => ({ name: m, supports1m: true })),
-  };
-}
-
-function readDesktopMeta(): DesktopMeta {
-  if (!fs.existsSync(DESKTOP_META_FILE)) return {};
-  try {
-    return readJson<DesktopMeta>(DESKTOP_META_FILE);
-  } catch {
-    return {};
-  }
-}
-
-function writeDesktopMeta(meta: DesktopMeta): void {
-  writeJson(DESKTOP_META_FILE, meta);
-}
-
-function writeDesktopProfile(id: string, data: DesktopProfileData): void {
-  const filePath = path.join(DESKTOP_CONFIG_LIBRARY, `${id}.json`);
-  writeJson(filePath, data);
-}
-
-function removeDesktopProfile(id: string): void {
-  const filePath = path.join(DESKTOP_CONFIG_LIBRARY, `${id}.json`);
-  if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
-  }
-}
-
-function syncProfileToDesktop(name: string, p: Profile): void {
-  if (!isDesktopAppInstalled()) return;
-  if (!fs.existsSync(DESKTOP_CONFIG_LIBRARY)) {
-    fs.mkdirSync(DESKTOP_CONFIG_LIBRARY, { recursive: true });
-  }
-
-  const meta = readDesktopMeta();
-  const entries = meta.entries || [];
-  let id = p.desktopId;
-
-  if (!id) {
-    // Try to find an existing desktop entry with the same name
-    const existingByName = entries.find((e) => e.name === name);
-    if (existingByName) {
-      id = existingByName.id;
-    } else {
-      id = randomUUID();
-    }
-    p.desktopId = id;
-  }
-
-  const existingIndex = entries.findIndex((e) => e.id === id);
-  if (existingIndex !== -1) {
-    entries[existingIndex].name = name;
-  } else {
-    entries.push({ id, name });
-  }
-
-  meta.entries = entries;
-  writeDesktopMeta(meta);
-  writeDesktopProfile(id, toDesktopProfile(p));
-}
-
-function removeProfileFromDesktop(name: string, p: Profile): void {
-  if (!isDesktopAppInstalled() || !p.desktopId) return;
-
-  const meta = readDesktopMeta();
-  if (meta.entries) {
-    meta.entries = meta.entries.filter((e) => e.id !== p.desktopId);
-  }
-  if (meta.appliedId === p.desktopId) {
-    delete meta.appliedId;
-  }
-  writeDesktopMeta(meta);
-  removeDesktopProfile(p.desktopId);
-}
-
-function setDesktopActiveProfile(p: Profile): void {
-  if (!isDesktopAppInstalled() || !p.desktopId) return;
-  const meta = readDesktopMeta();
-  meta.appliedId = p.desktopId;
-  const entries = meta.entries || [];
-  if (!entries.some((e) => e.id === p.desktopId)) {
-    entries.push({ id: p.desktopId, name: "unknown" });
-    meta.entries = entries;
-  }
-  writeDesktopMeta(meta);
-}
-
-function resolveClaudeBinary(): string {
-  // Try global CLI first
-  try {
-    const result = spawnSync("which", ["claude"], { encoding: "utf-8" });
-    if (result.status === 0 && result.stdout.trim()) {
-      return "claude";
-    }
-  } catch {
-    // fall through
-  }
-
-  const desktopBinary = findDesktopClaudeBinary();
-  if (desktopBinary) return desktopBinary;
-
-  console.error("Error: Could not find Claude Code CLI.");
-  console.error("Install it globally or install the Claude Code desktop app.");
-  process.exit(1);
-}
-
-function updateSettingsForProfile(p: Profile): void {
-  ensureSettingsFile();
-  const settings = readJson<SettingsData>(SETTINGS_FILE);
-  const models = p.models || (p.model ? [p.model] : []);
-
-  delete settings.model;
-  delete settings.availableModels;
-
-  // Clean up old model env vars (runtime ones are set in execClaude)
-  const envVarsToClean = [
-    "ANTHROPIC_DEFAULT_OPUS_MODEL",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION",
-    "ANTHROPIC_CUSTOM_MODEL_OPTION",
-  ];
-  if (settings.env) {
-    for (const key of envVarsToClean) {
-      delete settings.env[key];
-    }
-  }
-
-  writeJson(SETTINGS_FILE, settings);
+function collect(value: string, previous: string[]): string[] {
+  return previous.concat([value]);
 }
 
 export function profileCommand(): Command {
   const profile = new Command("profile")
     .description("Manage Claude CLI profiles");
 
+  const syncer = createProfileSyncer();
+
   // --- add ---
   profile
     .command("add")
     .description("Add or update a profile")
     .argument("<name>", "Profile name")
-    .option("-m, --model <model>", "Model ID (e.g. claude-opus-4-6) - can be used multiple times (max 3)", collect, [])
+    .option("-m, --model <model>", "Model ID - can be used multiple times (max 3)", collect, [])
     .option("-t, --token <token>", "API key / token")
-    .option("-u, --url <url>", "Base URL (e.g. https://api.anthropic.com)")
+    .option("-u, --url <url>", "Base URL")
     .option("-p, --provider <provider>", "Provider type: anthropic (default) or openai")
     .action((name: string, opts: { model?: string[]; token?: string; url?: string; provider?: string }) => {
       const models = opts.model && opts.model.length > 0 ? opts.model : undefined;
@@ -264,7 +90,7 @@ export function profileCommand(): Command {
       if (opts.provider) profile.provider = opts.provider as ProviderType;
 
       data.profiles[name] = profile;
-      syncProfileToDesktop(name, profile);
+      syncer.sync(name, profile);
       writeJson(PROFILES_FILE, data);
       console.log(`Profile '${name}' saved.`);
     });
@@ -274,11 +100,11 @@ export function profileCommand(): Command {
     .command("update")
     .description("Update fields of an existing profile")
     .argument("<name>", "Profile name (must already exist)")
-    .option("-m, --model <model>", "Model ID - can be used multiple times to set multiple models (max 3)", collect, [])
+    .option("-m, --model <model>", "Model ID - can be used multiple times", collect, [])
     .option("-d, --delete-model <model>", "Remove model ID - can be used multiple times", collect, [])
     .option("-t, --token <token>", "API key / token")
     .option("-u, --url <url>", "Base URL")
-    .option("-p, --provider <provider>", "Provider type: anthropic (default) or openai")
+    .option("-p, --provider <provider>", "Provider type")
     .action((name: string, opts: { model?: string[]; deleteModel?: string[]; token?: string; url?: string; provider?: string }) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
@@ -312,33 +138,28 @@ export function profileCommand(): Command {
 
       if (providedModels) {
         if (providedModels.length === 1) {
-          // Single model: check if exists, select it; otherwise add it
           const modelToSet = providedModels[0];
           const currentModels = p.models || (p.model ? [p.model] : []);
           const existingIndex = currentModels.indexOf(modelToSet);
 
           if (existingIndex !== -1) {
-            // Model exists: move it to first position
             currentModels.splice(existingIndex, 1);
             currentModels.unshift(modelToSet);
             p.models = currentModels;
             p.model = modelToSet;
             console.log(`Selected existing model '${modelToSet}' (position ${existingIndex + 1} -> 1).`);
           } else {
-            // Model doesn't exist: add it to the list
             currentModels.unshift(modelToSet);
             p.models = currentModels;
             p.model = modelToSet;
             console.log(`Added and selected new model '${modelToSet}'.`);
           }
         } else {
-          // Multiple models: replace the entire list
           p.models = providedModels;
           p.model = providedModels[0];
         }
       }
 
-      // Validate model count before saving
       const finalModels = p.models || (p.model ? [p.model] : []);
       if (finalModels.length > 3) {
         console.error("Error: A profile can have at most 3 models.");
@@ -349,7 +170,7 @@ export function profileCommand(): Command {
       if (opts.url) p.url = opts.url;
       if (opts.provider) p.provider = opts.provider as ProviderType;
 
-      syncProfileToDesktop(name, p);
+      syncer.sync(name, p);
       writeJson(PROFILES_FILE, data);
       console.log(`Profile '${name}' updated.`);
     });
@@ -443,7 +264,7 @@ export function profileCommand(): Command {
         console.error(`Profile '${name}' not found.`);
         process.exit(1);
       }
-      removeProfileFromDesktop(name, data.profiles[name]);
+      syncer.remove(name, data.profiles[name]);
       delete data.profiles[name];
       writeJson(PROFILES_FILE, data);
       console.log(`Profile '${name}' removed.`);
@@ -488,7 +309,7 @@ export function profileCommand(): Command {
         process.exit(1);
       }
       data.default = name;
-      setDesktopActiveProfile(data.profiles[name]);
+      syncer.setActive(data.profiles[name]);
       writeJson(PROFILES_FILE, data);
       console.log(`Default profile set to '${name}'.`);
     });
@@ -498,7 +319,7 @@ export function profileCommand(): Command {
     .command("sync")
     .description("Synchronize all CLI profiles to the Claude desktop app")
     .action(() => {
-      if (!isDesktopAppInstalled()) {
+      if (!syncer.isSupported()) {
         console.error("Claude desktop app is not installed.");
         process.exit(1);
       }
@@ -512,13 +333,9 @@ export function profileCommand(): Command {
         return;
       }
 
-      if (!fs.existsSync(DESKTOP_CONFIG_LIBRARY)) {
-        fs.mkdirSync(DESKTOP_CONFIG_LIBRARY, { recursive: true });
-      }
-
       for (const name of names) {
         const p = data.profiles[name];
-        syncProfileToDesktop(name, p);
+        syncer.sync(name, p);
       }
 
       writeJson(PROFILES_FILE, data);
@@ -528,90 +345,9 @@ export function profileCommand(): Command {
   return profile;
 }
 
-function collect(value: string, previous: string[]): string[] {
-  return previous.concat([value]);
-}
-
-function execClaude(profileName: string, p: Profile, extraArgs: string[]): never {
-  // Update settings.json with models from profile (includes env vars)
-  updateSettingsForProfile(p);
-
-  const models = p.models || (p.model ? [p.model] : []);
-  const firstModel = models[0];
-
-  const binary = resolveClaudeBinary();
-  const cmd = [binary];
-  if (firstModel) cmd.push("--model", firstModel);
-  cmd.push(...extraArgs);
-
-  // Pass auth credentials to spawned process
-  const env: Record<string, string | undefined> = {
-    ...process.env,
-    ANTHROPIC_AUTH_TOKEN: p.token || undefined,
-    ANTHROPIC_BASE_URL: p.url || undefined,
-    CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
-    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
-  };
-
-  // Set up model alias env vars for non-Anthropic models
-  if (models.length > 0) {
-    if (models[0]) {
-      env.ANTHROPIC_DEFAULT_SONNET_MODEL = models[0];
-      env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME = models[0];
-      env.ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION = `Custom: ${models[0]}`;
-    }
-    if (models[1]) {
-      env.ANTHROPIC_DEFAULT_OPUS_MODEL = models[1];
-      env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME = models[1];
-      env.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION = `Custom: ${models[1]}`;
-    }
-    if (models[2]) {
-      env.ANTHROPIC_DEFAULT_HAIKU_MODEL = models[2];
-      env.ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME = models[2];
-      env.ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION = `Custom: ${models[2]}`;
-    }
-    env.ANTHROPIC_CUSTOM_MODEL_OPTION = models[0];
-  }
-
-  // Remove ANTHROPIC_API_KEY so it doesn't conflict with ANTHROPIC_AUTH_TOKEN
-  delete env.ANTHROPIC_API_KEY;
-
-  console.error(`Using profile '${profileName}': model=${firstModel || "(default)"} url=${p.url || "(default)"} provider=${p.provider || "anthropic"}`);
-
-  if (p.provider === "openai") {
-    const allModels = p.models || (p.model ? [p.model] : []);
-
-    startOpenAIProxy(
-      p.url || "https://api.openai.com",
-      p.token || "",
-      firstModel || "gpt-4o",
-      allModels,
-    ).then(({ baseUrl, stop }) => {
-      env.ANTHROPIC_BASE_URL = baseUrl;
-      // Keep ANTHROPIC_AUTH_TOKEN so Claude Code thinks it's authenticated
-      // The proxy will override with its own auth header
-
-      const child = spawn(cmd[0], cmd.slice(1), { stdio: "inherit", env });
-      child.on("close", (code) => {
-        stop();
-        process.exit(code ?? 1);
-      });
-    }).catch((err) => {
-      console.error("Failed to start OpenAI proxy:", err);
-      process.exit(1);
-    });
-  } else {
-    // Use spawn + inherit stdio so the interactive claude CLI works
-    const result = spawnSync(cmd[0], cmd.slice(1), {
-      stdio: "inherit",
-      env,
-    });
-    process.exit(result.status ?? 1);
-  }
-}
-
-// --- use ---
 export function useCommand(): Command {
+  const syncer = createProfileSyncer();
+
   return new Command("use")
     .description("Set a profile as the default")
     .argument("<name>", "Profile name")
@@ -624,20 +360,18 @@ export function useCommand(): Command {
       }
 
       data.default = name;
-      setDesktopActiveProfile(data.profiles[name]);
+      syncer.setActive(data.profiles[name]);
       writeJson(PROFILES_FILE, data);
       console.log(`Default profile set to '${name}'.`);
     });
 }
 
-// --- run ---
 export function runCommand(): Command {
   return new Command("run")
     .description("Launch Claude Code using the default or a specified profile")
     .allowUnknownOption()
     .argument("[args...]", "Optional profile name followed by extra arguments")
     .action((args: string[]) => {
-      // Fix ~/.claude.json if corrupt before launching Claude
       fixJsonFile(CLAUDE_JSON);
 
       ensureProfilesFile();

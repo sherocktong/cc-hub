@@ -4,8 +4,8 @@ import {
   ensureSettingsFile,
   readJson,
   writeJson,
-} from "./config.js";
-import type { SettingsData, FlatHook, HookEntry } from "./types.js";
+} from "../config.js";
+import type { SettingsData, FlatHook, HookEntry } from "../types.js";
 
 function buildFlat(data: SettingsData): FlatHook[] {
   const rows: FlatHook[] = [];
@@ -71,9 +71,9 @@ export function hooksCommand(): Command {
       console.log(fmt(0, "", "-----", "-------", "-------").replace(/^0/, "---"));
       for (let idx = 0; idx < rows.length; idx++) {
         const r = rows[idx];
-        const marker = r.active ? " " : "\u2717";
+        const marker = r.active ? " " : "✗";
         const matcher = r.matcher || "(any)";
-        const cmd = r.command.length > 60 ? r.command.slice(0, 60) + "\u2026" : r.command;
+        const cmd = r.command.length > 60 ? r.command.slice(0, 60) + "…" : r.command;
         console.log(fmt(idx, marker, r.event, matcher, cmd));
       }
     });
@@ -131,7 +131,6 @@ export function hooksCommand(): Command {
       if (r.active) {
         const hooksRoot = data.hooks!;
         hooksRoot[r.event][r.gi].hooks.splice(r.hi, 1);
-        // Clean up empty groups
         hooksRoot[r.event] = hooksRoot[r.event].filter((g) => g.hooks.length > 0);
         if (hooksRoot[r.event].length === 0) delete hooksRoot[r.event];
       } else {
@@ -232,7 +231,6 @@ export function hooksCommand(): Command {
       const hooksRoot = data.hooks!;
       const pool = data._cc_hub_disabled || (data._cc_hub_disabled = []);
 
-      // Process in reverse so gi/hi positions stay valid within same group
       for (const t of [...targets].reverse()) {
         const r = rows[t];
         const hook = hooksRoot[r.event][r.gi].hooks[r.hi];

@@ -1,13 +1,4 @@
-import http from "node:http";
-import { Command } from "commander";
-
-// ---------------------------------------------------------------------------
-// Request transformation: Anthropic Messages API → OpenAI Chat Completions
-// ---------------------------------------------------------------------------
-
 export function sanitizeToolId(id: string): string {
-  // Bedrock expects tool IDs to match ^[a-zA-Z0-9_-]+$
-  // Replace invalid chars with underscore and ensure starts with letter
   let sanitized = id.replace(/[^a-zA-Z0-9_-]/g, "_");
   if (!/^[a-zA-Z]/.test(sanitized)) {
     sanitized = "tc_" + sanitized;
@@ -18,7 +9,6 @@ export function sanitizeToolId(id: string): string {
 export function transformAnthropicToOpenAI(body: Record<string, any>): Record<string, any> {
   const messages: any[] = [];
 
-  // System prompt
   if (body.system) {
     if (typeof body.system === "string") {
       messages.push({ role: "system", content: body.system });
@@ -43,7 +33,6 @@ export function transformAnthropicToOpenAI(body: Record<string, any>): Record<st
     }
 
     if (msg.role === "user") {
-      // tool_result blocks → individual tool messages
       const toolResults = msg.content.filter(
         (b: any) => b.type === "tool_result" && b.tool_use_id,
       );
@@ -63,7 +52,6 @@ export function transformAnthropicToOpenAI(body: Record<string, any>): Record<st
         });
       }
 
-      // Text and image blocks → user message
       const contentParts = msg.content.filter(
         (b: any) =>
           (b.type === "text" && b.text) ||
@@ -80,7 +68,6 @@ export function transformAnthropicToOpenAI(body: Record<string, any>): Record<st
           }
           return { type: "text", text: part.text };
         });
-        // If only text parts, simplify to string
         if (converted.every((p: any) => p.type === "text")) {
           messages.push({
             role: "user",
@@ -153,10 +140,6 @@ export function transformAnthropicToOpenAI(body: Record<string, any>): Record<st
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// Response transformation: OpenAI → Anthropic (non-streaming)
-// ---------------------------------------------------------------------------
-
 export function transformOpenAIResponseToAnthropic(
   openaiResponse: any,
   originalModel: string,
@@ -215,10 +198,6 @@ export function transformOpenAIResponseToAnthropic(
     },
   };
 }
-
-// ---------------------------------------------------------------------------
-// Stream synthesis: Anthropic response object → Anthropic SSE
-// ---------------------------------------------------------------------------
 
 export function* synthesizeAnthropicSSE(
   anthropicResponse: any,
@@ -283,178 +262,4 @@ export function* synthesizeAnthropicSSE(
   });
 
   yield sse("message_stop", { type: "message_stop" });
-}
-
-// ---------------------------------------------------------------------------
-// Embedded proxy server
-// ---------------------------------------------------------------------------
-
-export async function startOpenAIProxy(
-  targetUrl: string,
-  apiKey: string,
-  model: string,
-  models: string[] = [],
-): Promise<{ baseUrl: string; stop: () => void }> {
-  const base = targetUrl.replace(/\/+$/, "");
-
-  const server = http.createServer(async (req, res) => {
-    try {
-      // Models endpoint — return all available models
-      if (req.method === "GET" && req.url === "/v1/models") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        const modelList = models.length > 0 ? models : [model];
-        const response = {
-          object: "list",
-          data: modelList.map((m) => ({ id: m, object: "model" })),
-        };
-        res.end(JSON.stringify(response));
-        return;
-      }
-
-      // Messages endpoint
-      if (req.method === "POST" && req.url?.startsWith("/v1/messages")) {
-        const body = await readBody(req);
-        let parsed: Record<string, any>;
-        try {
-          parsed = JSON.parse(body);
-        } catch {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ error: { type: "invalid_request_error", message: "invalid JSON" } }));
-          return;
-        }
-
-        const isStream = !!parsed.stream;
-        // Always request non-streaming from OpenAI so that token counts are
-        // available upfront and can be placed in message_start, which is what
-        // Claude Code uses to populate the context bar.
-        const openaiBody = transformAnthropicToOpenAI({ ...parsed, stream: false });
-
-        if (isStream) {
-          // Send headers immediately so Claude Code's connection doesn't time
-          // out while we wait for a slow OpenAI response (e.g. /compact).
-          res.writeHead(200, {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-          });
-          // SSE keepalive comments prevent the connection from being closed
-          // before the (potentially large) OpenAI response arrives.
-          const keepalive = setInterval(() => res.write(": keepalive\n\n"), 15_000);
-          try {
-            const upstream = await fetch(`${base}/v1/chat/completions`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${apiKey}`,
-              },
-              body: JSON.stringify(openaiBody),
-            });
-            if (!upstream.ok) {
-              const errText = await upstream.text();
-              res.write(`event: error\ndata: ${errText}\n\n`);
-              res.end();
-              return;
-            }
-            const data = await upstream.json();
-            const anthropicResponse = transformOpenAIResponseToAnthropic(data, parsed.model ?? model);
-            for (const chunk of synthesizeAnthropicSSE(anthropicResponse)) {
-              res.write(chunk);
-            }
-            res.end();
-          } finally {
-            clearInterval(keepalive);
-          }
-          return;
-        }
-
-        const upstream = await fetch(`${base}/v1/chat/completions`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(openaiBody),
-        });
-
-        if (!upstream.ok) {
-          const errText = await upstream.text();
-          res.writeHead(upstream.status, { "Content-Type": "application/json" });
-          res.end(errText);
-          return;
-        }
-
-        const data = await upstream.json();
-        const anthropicResponse = transformOpenAIResponseToAnthropic(data, parsed.model ?? model);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(anthropicResponse));
-
-        return;
-      }
-
-      res.writeHead(404, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: { type: "not_found", message: "endpoint not found" } }));
-    } catch (err) {
-      if (!res.headersSent) {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: { type: "internal_error", message: String(err) } }));
-      }
-    }
-  });
-
-  // Let OS pick a free port and wait for it to be ready
-  return new Promise((resolve, reject) => {
-    server.listen(0, "127.0.0.1", () => {
-      const addr = server.address() as { port: number };
-      const baseUrl = `http://127.0.0.1:${addr.port}`;
-      resolve({
-        baseUrl,
-        stop: () => server.close(),
-      });
-    });
-    server.on("error", reject);
-  });
-}
-
-function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (c) => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
-    req.on("error", reject);
-  });
-}
-
-// ---------------------------------------------------------------------------
-// provider list command
-// ---------------------------------------------------------------------------
-
-const PROVIDERS = [
-  {
-    name: "anthropic",
-    description: "Default — sends Anthropic-format requests directly to the configured URL",
-  },
-  {
-    name: "openai",
-    description:
-      "Embedded proxy — translates Anthropic requests to OpenAI Chat Completions format",
-  },
-];
-
-export function providerCommand(): Command {
-  const cmd = new Command("provider").description("Manage provider types");
-
-  cmd
-    .command("list")
-    .description("List available provider types")
-    .action(() => {
-      const fmt = (name: string, desc: string) =>
-        `${name.padEnd(12)}  ${desc}`;
-      console.log(fmt("NAME", "DESCRIPTION"));
-      console.log(fmt("----", "-----------"));
-      for (const p of PROVIDERS) {
-        console.log(fmt(p.name, p.description));
-      }
-    });
-
-  return cmd;
 }

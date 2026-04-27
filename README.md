@@ -2,7 +2,7 @@
 
 Manage Claude CLI profiles, hooks, and sessions — one tool, all in one place.
 
-> **Note:** Currently macOS only.
+> **Note:** macOS, Linux, and Windows supported.
 
 ## Install
 
@@ -100,8 +100,11 @@ cc-hub hook disable -i <index> [-i <index>]                   # Disable active h
 **Examples:**
 
 ```bash
-# Desktop notification when Claude finishes
+# Desktop notification when Claude finishes (macOS)
 cc-hub hook add -e Stop -c 'osascript -e "display notification \"Done\""'
+
+# Desktop notification when Claude finishes (Windows PowerShell)
+cc-hub hook add -e Stop -c 'powershell -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show(\"Claude Done\")"'
 
 # Hook only for Bash tool usage
 cc-hub hook add -e PreToolUse -m Bash -c 'echo "Running bash..."'
@@ -149,6 +152,9 @@ eval "$(cc-hub complete zsh)"
 
 # bash — add to ~/.bashrc
 eval "$(cc-hub complete bash)"
+
+# PowerShell — add to $PROFILE
+Invoke-Expression (& cc-hub complete powershell | Out-String)
 ```
 
 Completes subcommands, profile names, and event types.
