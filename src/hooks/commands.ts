@@ -46,6 +46,28 @@ function buildFlat(data: SettingsData): FlatHook[] {
   return rows;
 }
 
+function displayHookList(data: SettingsData): void {
+  const rows = buildFlat(data);
+
+  if (rows.length === 0) {
+    console.log("No hooks defined.");
+    return;
+  }
+
+  const fmt = (idx: number, active: string, event: string, matcher: string, cmd: string) =>
+    `${String(idx).padEnd(4)}  ${active.padEnd(2)}  ${event.padEnd(22)}  ${matcher.padEnd(25)}  ${cmd}`;
+
+  console.log(fmt(0, "", "EVENT", "MATCHER", "COMMAND").replace(/^IDX/, "IDX").replace(/^0/, "IDX"));
+  console.log(fmt(0, "", "-----", "-------", "-------").replace(/^0/, "---"));
+  for (let idx = 0; idx < rows.length; idx++) {
+    const r = rows[idx];
+    const marker = r.active ? " " : "✗";
+    const matcher = r.matcher || "(any)";
+    const cmd = r.command.length > 60 ? r.command.slice(0, 60) + "…" : r.command;
+    console.log(fmt(idx, marker, r.event, matcher, cmd));
+  }
+}
+
 export function hooksCommand(): Command {
   const hooks = new Command("hook")
     .description("Manage Claude Code hooks in settings.json");
@@ -57,25 +79,7 @@ export function hooksCommand(): Command {
     .action(() => {
       ensureSettingsFile();
       const data = readJson<SettingsData>(SETTINGS_FILE);
-      const rows = buildFlat(data);
-
-      if (rows.length === 0) {
-        console.log("No hooks defined.");
-        return;
-      }
-
-      const fmt = (idx: number, active: string, event: string, matcher: string, cmd: string) =>
-        `${String(idx).padEnd(4)}  ${active.padEnd(2)}  ${event.padEnd(22)}  ${matcher.padEnd(25)}  ${cmd}`;
-
-      console.log(fmt(0, "", "EVENT", "MATCHER", "COMMAND").replace(/^IDX/, "IDX").replace(/^0/, "IDX"));
-      console.log(fmt(0, "", "-----", "-------", "-------").replace(/^0/, "---"));
-      for (let idx = 0; idx < rows.length; idx++) {
-        const r = rows[idx];
-        const marker = r.active ? " " : "✗";
-        const matcher = r.matcher || "(any)";
-        const cmd = r.command.length > 60 ? r.command.slice(0, 60) + "…" : r.command;
-        console.log(fmt(idx, marker, r.event, matcher, cmd));
-      }
+      displayHookList(data);
     });
 
   // --- add ---
@@ -201,6 +205,8 @@ export function hooksCommand(): Command {
       data._cc_hub_disabled = remaining;
       if (remaining.length === 0) delete data._cc_hub_disabled;
       writeJson(SETTINGS_FILE, data);
+      console.log("");
+      displayHookList(data);
     });
 
   // --- disable ---
@@ -248,6 +254,8 @@ export function hooksCommand(): Command {
       }
 
       writeJson(SETTINGS_FILE, data);
+      console.log("");
+      displayHookList(data);
     });
 
   return hooks;
