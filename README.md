@@ -159,6 +159,44 @@ Invoke-Expression (& cc-hub completion powershell | Out-String)
 
 Completes subcommands, profile names, and event types.
 
+## Logging
+
+cc-hub writes structured logs to `~/.claude/cc-hub/logs/cc-hub-YYYY-MM-DD.log`.
+
+### Log levels
+
+Levels are ordered from most to least verbose:
+
+| Level | Description |
+|---|---|
+| `DEBUG` | All service calls, file reads/writes, path encode/decode, proxy requests |
+| `INFO`  | Command executions, profile launches, proxy start/stop |
+| `WARN`  | JSON auto-fix events, backup restores |
+| `ERROR` | Thrown exceptions, upstream errors, uncaught exceptions/rejections |
+
+The default level is `INFO`. To change it, add `_cc_hub_logLevel` to `~/.claude/settings.json`:
+
+```json
+{
+  "_cc_hub_logLevel": "DEBUG"
+}
+```
+
+Valid values: `DEBUG`, `INFO`, `WARN`, `ERROR`.
+
+### Viewing logs
+
+```bash
+# Tail today's log
+tail -f ~/.claude/cc-hub/logs/cc-hub-$(date +%Y-%m-%d).log
+
+# View all logs
+ls -lt ~/.claude/cc-hub/logs/
+
+# Search for errors
+grep ERROR ~/.claude/cc-hub/logs/*.log
+```
+
 ## Configuration
 
 cc-hub reads from these paths (overridable via environment variables):
