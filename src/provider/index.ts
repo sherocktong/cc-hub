@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { startOpenAIProxy } from "./server.js";
+import { safeAction } from "../logger.js";
 
 export {
   sanitizeToolId,
@@ -28,7 +29,7 @@ export function providerCommand(): Command {
   cmd
     .command("list")
     .description("List available provider types")
-    .action(() => {
+    .action(safeAction(() => {
       const fmt = (name: string, desc: string) =>
         `${name.padEnd(12)}  ${desc}`;
       console.log(fmt("NAME", "DESCRIPTION"));
@@ -36,7 +37,7 @@ export function providerCommand(): Command {
       for (const p of PROVIDERS) {
         console.log(fmt(p.name, p.description));
       }
-    });
+    }));
 
   return cmd;
 }

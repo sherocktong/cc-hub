@@ -6,6 +6,8 @@ import { createDesktopApp } from "../platform/index.js";
 import { encodePath, decodePath } from "./codec.js";
 import { getDirSize, formatSize } from "./stats.js";
 import { formatTimestamp, findProjectDir, parseSessionMeta, extractText, snippet } from "./utils.js";
+import { safeAction } from "../logger.js";
+import * as logger from "../logger.js";
 
 export function sessionCommand(): Command {
   const session = new Command("session")
@@ -21,7 +23,8 @@ export function sessionCommand(): Command {
     .option("-n, --limit <n>", "Max number of projects to show", "30")
     .option("-s, --short", "Show encoded names only (no decoding)")
     .option("-j, --json", "Output as JSON lines")
-    .action((opts: { limit: string; short?: boolean; json?: boolean }) => {
+    .action(safeAction((opts: { limit: string; short?: boolean; json?: boolean }) => {
+      logger.debug(`session list: reading projects from ${PROJECTS_DIR}, limit=${opts.limit}`);
       const limit = parseInt(opts.limit, 10);
       let dirs: string[];
       try {
@@ -58,7 +61,7 @@ export function sessionCommand(): Command {
         }
         count++;
       }
-    });
+    }));
 
   // --- show ---
   session
@@ -66,11 +69,11 @@ export function sessionCommand(): Command {
     .description("Show session files for a project")
     .argument("<project>", "Project path or encoded name (partial match ok)")
     .option("-v, --verbose", "Show first user message of each session")
-    .action((project: string, opts: { verbose?: boolean }) => {
+    .action(safeAction((project: string, opts: { verbose?: boolean }) => {
+      logger.debug(`session show: project=${project} verbose=${!!opts.verbose}`);
       const projDir = findProjectDir(project);
       if (!projDir) {
-        console.error(`No project matched: ${project}`);
-        process.exit(1);
+        throw new Error(`No project matched: ${project}`);
       }
 
       const fullPath = path.join(PROJECTS_DIR, projDir);
@@ -128,7 +131,7 @@ export function sessionCommand(): Command {
           } catch { /* skip */ }
         }
       }
-    });
+    }));
 
   // --- search ---
   session
@@ -138,7 +141,8 @@ export function sessionCommand(): Command {
     .option("-p, --project <project>", "Filter to a specific project (partial match)")
     .option("-n, --limit <n>", "Max number of matching files to show", "20")
     .option("-i, --ignore-case", "Case-insensitive search")
-    .action((query: string, opts: { project?: string; limit: string; ignoreCase?: boolean }) => {
+    .action(safeAction((query: string, opts: { project?: string; limit: string; ignoreCase?: boolean }) => {
+      logger.debug(`session search: query="${query}" project=${opts.project || "(all)"} limit=${opts.limit} ignoreCase=${!!opts.ignoreCase}`);
       let searchRoots: Array<{ root: string; label: string }> = [{ root: PROJECTS_DIR, label: "" }];
       if (isDesktopAppInstalled()) {
         searchRoots.push({ root: DESKTOP_SESSIONS_DIR, label: "[desktop] " });
@@ -147,8 +151,7 @@ export function sessionCommand(): Command {
       if (opts.project) {
         const projDir = findProjectDir(opts.project);
         if (!projDir) {
-          console.error(`No project matched: ${opts.project}`);
-          process.exit(1);
+          throw new Error(`No project matched: ${opts.project}`);
         }
         searchRoots = [{ root: path.join(PROJECTS_DIR, projDir), label: "" }];
       }
@@ -226,13 +229,14 @@ export function sessionCommand(): Command {
       for (const { root, label } of searchRoots) {
         searchDir(root, label, root);
       }
-    });
+    }));
 
   // --- ps ---
   session
     .command("ps")
     .description("Show active Claude Code processes")
-    .action(() => {
+    .action(safeAction(() => {
+      logger.debug(`session ps: reading sessions from ${SESSIONS_DIR}`);
       let files: string[];
       try {
         files = fs.readdirSync(SESSIONS_DIR).filter((f) => f.endsWith(".json"));
@@ -268,13 +272,14 @@ export function sessionCommand(): Command {
           console.log(fmt(pid, sessionId, formatTimestamp(startedMs), cwd, alive));
         } catch { /* skip bad files */ }
       }
-    });
+    }));
 
   // --- stats ---
   session
     .command("stats")
     .description("Show summary statistics across all Claude Code sessions")
-    .action(() => {
+    .action(safeAction(() => {
+      logger.debug(`session stats: scanning ${PROJECTS_DIR} and ${DESKTOP_SESSIONS_DIR || "(no desktop)"}`);
       let nProjects = 0;
       let nSessions = 0;
       let totalMsgs = 0;
@@ -347,7 +352,7 @@ export function sessionCommand(): Command {
       if (desktopSize) {
         console.log(`  Desktop:       ${desktopSize}`);
       }
-    });
+    }));
 
   // --- clean ---
   session
@@ -355,7 +360,8 @@ export function sessionCommand(): Command {
     .description("Delete session JSONL files older than N days")
     .option("-d, --days <n>", "Delete files older than this many days", "30")
     .option("--dry-run", "Show what would be deleted without deleting")
-    .action((opts: { days: string; dryRun?: boolean }) => {
+    .action(safeAction((opts: { days: string; dryRun?: boolean }) => {
+      logger.debug(`session clean: days=${opts.days} dryRun=${!!opts.dryRun}`);
       const days = parseInt(opts.days, 10);
       const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
       let deleted = 0;
@@ -399,7 +405,7 @@ export function sessionCommand(): Command {
       console.log("");
       const verb = opts.dryRun ? "Would delete" : "Deleted";
       console.log(`${verb} ${deleted} file(s) (~${Math.floor(freed / 1024)}KB freed)`);
-    });
+    }));
 
   return session;
 }

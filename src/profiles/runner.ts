@@ -10,12 +10,14 @@ import {
 import type { Profile, SettingsData } from "../types.js";
 import { startOpenAIProxy } from "../provider/index.js";
 import { createBinaryResolver } from "../platform/index.js";
+import * as logger from "../logger.js";
 
 export function resolveClaudeBinary(): string {
   return createBinaryResolver().resolve();
 }
 
 function updateSettingsForProfile(p: Profile): void {
+  logger.debug(`updateSettingsForProfile: reading ${SETTINGS_FILE}`);
   ensureSettingsFile();
   const settings = readJson<SettingsData>(SETTINGS_FILE);
   const models = p.models || (p.model ? [p.model] : []);
@@ -43,6 +45,7 @@ function updateSettingsForProfile(p: Profile): void {
   }
 
   writeJson(SETTINGS_FILE, settings);
+  logger.debug(`updateSettingsForProfile: wrote ${SETTINGS_FILE}`);
 }
 
 export function execClaude(profileName: string, p: Profile, extraArgs: string[]): void {
@@ -85,10 +88,11 @@ export function execClaude(profileName: string, p: Profile, extraArgs: string[])
 
   delete env.ANTHROPIC_API_KEY;
 
-  console.error(`Using profile '${profileName}': model=${firstModel || "(default)"} url=${p.url || "(default)"} provider=${p.provider || "anthropic"}`);
+  logger.info(`Launching Claude with profile '${profileName}': model=${firstModel || "(default)"} url=${p.url || "(default)"} provider=${p.provider || "anthropic"} binary=${binary}`);
 
   if (p.provider === "openai") {
     const allModels = p.models || (p.model ? [p.model] : []);
+    logger.debug(`execClaude: starting OpenAI proxy for ${allModels.length} model(s)`);
 
     startOpenAIProxy(
       p.url || "https://api.openai.com",
@@ -97,6 +101,7 @@ export function execClaude(profileName: string, p: Profile, extraArgs: string[])
       allModels,
     ).then(({ baseUrl, stop }) => {
       env.ANTHROPIC_BASE_URL = baseUrl;
+      logger.debug(`execClaude: proxy running at ${baseUrl}`);
 
       const child = spawn(cmd[0], cmd.slice(1), { stdio: "inherit", env, shell: process.platform === "win32" });
       child.on("close", (code) => {
@@ -104,6 +109,7 @@ export function execClaude(profileName: string, p: Profile, extraArgs: string[])
         process.exit(code ?? 1);
       });
     }).catch((err) => {
+      logger.error("Failed to start OpenAI proxy", err);
       console.error("Failed to start OpenAI proxy:", err);
       process.exit(1);
     });

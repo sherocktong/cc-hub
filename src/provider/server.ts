@@ -4,6 +4,7 @@ import {
   transformOpenAIResponseToAnthropic,
   synthesizeAnthropicSSE,
 } from "./transform.js";
+import * as logger from "../logger.js";
 
 export async function startOpenAIProxy(
   targetUrl: string,
@@ -14,6 +15,7 @@ export async function startOpenAIProxy(
   const base = targetUrl.replace(/\/+$/, "");
 
   const server = http.createServer(async (req, res) => {
+    logger.debug(`Proxy request: ${req.method} ${req.url}`);
     try {
       if (req.method === "GET" && req.url === "/v1/models") {
         res.writeHead(200, { "Content-Type": "application/json" });
@@ -58,6 +60,7 @@ export async function startOpenAIProxy(
             });
             if (!upstream.ok) {
               const errText = await upstream.text();
+              logger.error(`Upstream streaming error: ${upstream.status} ${errText}`);
               res.write(`event: error\ndata: ${errText}\n\n`);
               res.end();
               return;
@@ -85,6 +88,7 @@ export async function startOpenAIProxy(
 
         if (!upstream.ok) {
           const errText = await upstream.text();
+          logger.error(`Upstream error: ${upstream.status} ${errText}`);
           res.writeHead(upstream.status, { "Content-Type": "application/json" });
           res.end(errText);
           return;
@@ -100,6 +104,7 @@ export async function startOpenAIProxy(
       res.writeHead(404, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: { type: "not_found", message: "endpoint not found" } }));
     } catch (err) {
+      logger.error("Proxy request handler error", err);
       if (!res.headersSent) {
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: { type: "internal_error", message: String(err) } }));
@@ -111,9 +116,13 @@ export async function startOpenAIProxy(
     server.listen(0, "127.0.0.1", () => {
       const addr = server.address() as { port: number };
       const baseUrl = `http://127.0.0.1:${addr.port}`;
+      logger.debug(`OpenAI proxy listening on ${baseUrl}`);
       resolve({
         baseUrl,
-        stop: () => server.close(),
+        stop: () => {
+          logger.debug("OpenAI proxy stopped");
+          server.close();
+        },
       });
     });
     server.on("error", reject);

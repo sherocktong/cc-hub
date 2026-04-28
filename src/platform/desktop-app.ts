@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import type { IDesktopApp } from "./interfaces.js";
+import * as logger from "../logger.js";
 
 function sortSemverDesc(a: string, b: string): number {
   const parse = (v: string) => v.split(".").map((n) => parseInt(n, 10));
@@ -39,6 +40,7 @@ export class MacOSDesktopApp implements IDesktopApp {
   }
 
   findBinary(): string | undefined {
+    logger.debug(`desktop-app: searching for binary in ${this.supportDir}`);
     const claudeCodeDir = path.join(this.supportDir, "claude-code");
     if (!fs.existsSync(claudeCodeDir)) return undefined;
 
@@ -54,7 +56,9 @@ export class MacOSDesktopApp implements IDesktopApp {
     if (versions.length === 0) return undefined;
 
     versions.sort(sortSemverDesc);
-    return path.join(claudeCodeDir, versions[0], "claude.app", "Contents", "MacOS", "claude");
+    const binary = path.join(claudeCodeDir, versions[0], "claude.app", "Contents", "MacOS", "claude");
+    logger.debug(`desktop-app: found macOS binary ${binary}`);
+    return binary;
   }
 }
 

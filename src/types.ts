@@ -33,6 +33,7 @@ export interface SettingsData {
   hooks?: Record<string, HookGroup[]>;
   _cc_hub_disabled?: HookEntry[];
   _cc_hub_seq?: number;
+  _cc_hub_logLevel?: string;
   [key: string]: unknown;
 }
 

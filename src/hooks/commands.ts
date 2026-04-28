@@ -6,6 +6,8 @@ import {
   writeJson,
 } from "../config.js";
 import type { SettingsData, FlatHook, HookEntry } from "../types.js";
+import { safeAction } from "../logger.js";
+import * as logger from "../logger.js";
 
 function buildFlat(data: SettingsData): FlatHook[] {
   const rows: FlatHook[] = [];
@@ -76,11 +78,13 @@ export function hooksCommand(): Command {
   hooks
     .command("list")
     .description("List all hooks")
-    .action(() => {
+    .action(safeAction(() => {
+      logger.debug("hook list: reading settings");
       ensureSettingsFile();
       const data = readJson<SettingsData>(SETTINGS_FILE);
+      logger.debug(`hook list: found ${Object.keys(data.hooks || {}).length} event types`);
       displayHookList(data);
-    });
+    }));
 
   // --- add ---
   hooks
@@ -90,7 +94,8 @@ export function hooksCommand(): Command {
     .option("-m, --matcher <matcher>", "Tool name matcher (omit for catch-all)")
     .requiredOption("-c, --command <command>", "Shell command to run")
     .option("-a, --async", "Run the hook asynchronously")
-    .action((opts: { event: string; matcher?: string; command: string; async?: boolean }) => {
+    .action(safeAction((opts: { event: string; matcher?: string; command: string; async?: boolean }) => {
+      logger.debug(`hook add: event=${opts.event} matcher=${opts.matcher || "(any)"}`);
       ensureSettingsFile();
       const data = readJson<SettingsData>(SETTINGS_FILE);
       const hooksRoot = data.hooks || (data.hooks = {});
@@ -112,23 +117,24 @@ export function hooksCommand(): Command {
 
       targetGroup.hooks.push(newHook);
       writeJson(SETTINGS_FILE, data);
+      logger.debug(`hook add: wrote settings with new hook seq=${seq}`);
       console.log(`Hook added to event '${opts.event}'${matcher ? ` matcher='${matcher}'` : ""}.`);
-    });
+    }));
 
   // --- remove ---
   hooks
     .command("remove")
     .description("Remove a hook by its global index (see 'hooks list')")
     .requiredOption("-i, --index <index>", "Global index from 'hooks list'", parseInt)
-    .action((opts: { index: number }) => {
+    .action(safeAction((opts: { index: number }) => {
+      logger.debug(`hook remove: index=${opts.index}`);
       ensureSettingsFile();
       const data = readJson<SettingsData>(SETTINGS_FILE);
       const rows = buildFlat(data);
       const target = opts.index;
 
       if (target < 0 || target >= rows.length) {
-        console.error(`Index ${target} out of range (0-${rows.length - 1}).`);
-        process.exit(1);
+        throw new Error(`Index ${target} out of range (0-${rows.length - 1}).`);
       }
 
       const r = rows[target];
@@ -144,8 +150,9 @@ export function hooksCommand(): Command {
       }
 
       writeJson(SETTINGS_FILE, data);
+      logger.debug(`hook remove: wrote settings after removing hook ${target}`);
       console.log(`Hook ${target} removed.`);
-    });
+    }));
 
   // --- enable ---
   hooks
@@ -156,7 +163,8 @@ export function hooksCommand(): Command {
       prev.push(parseInt(v));
       return prev;
     })
-    .action((opts: { index: number[] }) => {
+    .action(safeAction((opts: { index: number[] }) => {
+      logger.debug(`hook enable: indexes=[${opts.index.join(", ")}]`);
       ensureSettingsFile();
       const data = readJson<SettingsData>(SETTINGS_FILE);
       const rows = buildFlat(data);
@@ -168,8 +176,7 @@ export function hooksCommand(): Command {
         else if (rows[t].active) errors.push(`Index ${t} is already active.`);
       }
       if (errors.length > 0) {
-        for (const e of errors) console.error(e);
-        process.exit(1);
+        throw new Error(errors.join("\n"));
       }
 
       const hooksRoot = data.hooks || (data.hooks = {});
@@ -205,9 +212,10 @@ export function hooksCommand(): Command {
       data._cc_hub_disabled = remaining;
       if (remaining.length === 0) delete data._cc_hub_disabled;
       writeJson(SETTINGS_FILE, data);
+      logger.debug(`hook enable: wrote settings after restoring ${toRestore.length} hook(s)`);
       console.log("");
       displayHookList(data);
-    });
+    }));
 
   // --- disable ---
   hooks
@@ -218,7 +226,8 @@ export function hooksCommand(): Command {
       prev.push(parseInt(v));
       return prev;
     })
-    .action((opts: { index: number[] }) => {
+    .action(safeAction((opts: { index: number[] }) => {
+      logger.debug(`hook disable: indexes=[${opts.index.join(", ")}]`);
       ensureSettingsFile();
       const data = readJson<SettingsData>(SETTINGS_FILE);
       const rows = buildFlat(data);
@@ -230,8 +239,7 @@ export function hooksCommand(): Command {
         else if (!rows[t].active) errors.push(`Index ${t} is already disabled.`);
       }
       if (errors.length > 0) {
-        for (const e of errors) console.error(e);
-        process.exit(1);
+        throw new Error(errors.join("\n"));
       }
 
       const hooksRoot = data.hooks!;
@@ -254,9 +262,10 @@ export function hooksCommand(): Command {
       }
 
       writeJson(SETTINGS_FILE, data);
+      logger.debug(`hook disable: wrote settings after disabling ${targets.length} hook(s)`);
       console.log("");
       displayHookList(data);
-    });
+    }));
 
   return hooks;
 }

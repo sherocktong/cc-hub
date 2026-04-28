@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { IProfileSyncer, IDesktopApp } from "./interfaces.js";
 import type { Profile } from "../types.js";
 import { readJson, writeJson } from "../config.js";
+import * as logger from "../logger.js";
 
 interface DesktopMeta {
   appliedId?: string;
@@ -47,6 +48,7 @@ export class DesktopProfileSyncer implements IProfileSyncer {
 
   sync(name: string, p: Profile): void {
     const configLib = this.app.getConfigLibrary();
+    logger.debug(`profile-syncer: sync '${name}' to ${configLib || "(none)"}`);
     if (!configLib) return;
     if (!fs.existsSync(configLib)) {
       fs.mkdirSync(configLib, { recursive: true });
@@ -76,10 +78,12 @@ export class DesktopProfileSyncer implements IProfileSyncer {
     meta.entries = entries;
     this.writeMeta(meta);
     this.writeProfile(id, configLib, toDesktopProfile(p));
+    logger.debug(`profile-syncer: synced '${name}' id=${id}`);
   }
 
   remove(name: string, p: Profile): void {
     const configLib = this.app.getConfigLibrary();
+    logger.debug(`profile-syncer: remove '${name}' id=${p.desktopId || "(none)"} from ${configLib || "(none)"}`);
     if (!configLib || !p.desktopId) return;
 
     const meta = this.readMeta();
@@ -99,6 +103,7 @@ export class DesktopProfileSyncer implements IProfileSyncer {
 
   setActive(p: Profile): void {
     const configLib = this.app.getConfigLibrary();
+    logger.debug(`profile-syncer: setActive id=${p.desktopId || "(none)"} in ${configLib || "(none)"}`);
     if (!configLib || !p.desktopId) return;
 
     const meta = this.readMeta();

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { createDesktopApp } from "./platform/index.js";
+import * as logger from "./logger.js";
 
 export const CLAUDE_DIR = process.env.CLAUDE_DIR || path.join(os.homedir(), ".claude");
 export const PROFILES_FILE = process.env.CLAUDE_PROFILES_FILE || path.join(CLAUDE_DIR, "profiles.json");
@@ -33,16 +34,19 @@ export function findDesktopClaudeBinary(): string | undefined {
 
 export function ensureFile(filePath: string, defaultContent: string): void {
   if (!fs.existsSync(filePath)) {
+    logger.debug(`ensureFile: creating ${filePath}`);
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, defaultContent, "utf-8");
   }
 }
 
 export function readJson<T = unknown>(filePath: string): T {
+  logger.debug(`readJson: ${filePath}`);
   return JSON.parse(fs.readFileSync(filePath, "utf-8")) as T;
 }
 
 export function writeJson(filePath: string, data: unknown): void {
+  logger.debug(`writeJson: ${filePath}`);
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2) + "\n", "utf-8");
 }
 
@@ -110,14 +114,17 @@ export function fixJsonFile(filePath: string, fallback: Record<string, unknown> 
   try {
     JSON.parse(text);
     fs.writeFileSync(filePath, text + "\n", "utf-8");
+    logger.warn(`Fixed invalid JSON in ${path.basename(filePath)}.`);
     console.error(`Fixed invalid JSON in ${path.basename(filePath)}.`);
   } catch {
     // Unrecoverable — restore backup or write fallback
     if (fs.existsSync(backupPath)) {
       fs.copyFileSync(backupPath, filePath);
+      logger.warn(`Restored ${path.basename(filePath)} from backup.`);
       console.error(`Restored ${path.basename(filePath)} from backup.`);
     } else {
       writeJson(filePath, fallback);
+      logger.error(`Could not fix ${path.basename(filePath)}, no backup found, reset to default.`);
       console.error(`Could not fix ${path.basename(filePath)}, no backup found, reset to default.`);
     }
   }

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { PROJECTS_DIR } from "../config.js";
 import { encodePath } from "./codec.js";
+import * as logger from "../logger.js";
 
 export function formatTimestamp(ms: number): string {
   const d = new Date(ms);
@@ -10,12 +11,17 @@ export function formatTimestamp(ms: number): string {
 }
 
 export function findProjectDir(query: string): string | null {
+  logger.debug(`sessions: findProjectDir query="${query}"`);
   const encoded = encodePath(query);
-  if (fs.existsSync(path.join(PROJECTS_DIR, encoded))) return encoded;
+  if (fs.existsSync(path.join(PROJECTS_DIR, encoded))) {
+    logger.debug(`sessions: findProjectDir exact match ${encoded}`);
+    return encoded;
+  }
 
   try {
     const dirs = fs.readdirSync(PROJECTS_DIR);
     const match = dirs.find((d) => d.toLowerCase().includes(query.toLowerCase()));
+    if (match) logger.debug(`sessions: findProjectDir partial match ${match}`);
     return match || null;
   } catch {
     return null;

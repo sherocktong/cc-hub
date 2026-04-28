@@ -6,7 +6,10 @@ export function sanitizeToolId(id: string): string {
   return sanitized;
 }
 
+import * as logger from "../logger.js";
+
 export function transformAnthropicToOpenAI(body: Record<string, any>): Record<string, any> {
+  logger.debug(`transform: anthropic -> openai model=${body.model} messages=${(body.messages ?? []).length}`);
   const messages: any[] = [];
 
   if (body.system) {
@@ -115,6 +118,7 @@ export function transformAnthropicToOpenAI(body: Record<string, any>): Record<st
   if (body.temperature != null) result.temperature = body.temperature;
 
   if (body.tools?.length) {
+    logger.debug(`transform: mapping ${body.tools.length} tool(s)`);
     result.tools = body.tools.map((t: any) => ({
       type: "function",
       function: {
@@ -144,6 +148,7 @@ export function transformOpenAIResponseToAnthropic(
   openaiResponse: any,
   originalModel: string,
 ): any {
+  logger.debug(`transform: openai -> anthropic model=${openaiResponse.model ?? originalModel} choices=${openaiResponse.choices?.length ?? 0}`);
   const choice = openaiResponse.choices?.[0];
   if (!choice) throw new Error("No choices in OpenAI response");
 

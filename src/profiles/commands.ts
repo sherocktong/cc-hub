@@ -10,6 +10,8 @@ import {
 import type { ProfilesData, Profile, ProviderType } from "../types.js";
 import { createProfileSyncer } from "../platform/index.js";
 import { execClaude } from "./runner.js";
+import { safeAction } from "../logger.js";
+import * as logger from "../logger.js";
 
 function maskToken(token: string): string {
   if (!token) return "(unset)";
@@ -70,11 +72,10 @@ export function profileCommand(): Command {
     .option("-t, --token <token>", "API key / token")
     .option("-u, --url <url>", "Base URL")
     .option("-p, --provider <provider>", "Provider type: anthropic (default) or openai")
-    .action((name: string, opts: { model?: string[]; token?: string; url?: string; provider?: string }) => {
+    .action(safeAction((name: string, opts: { model?: string[]; token?: string; url?: string; provider?: string }) => {
       const models = opts.model && opts.model.length > 0 ? opts.model : undefined;
       if (models && models.length > 3) {
-        console.error("Error: A profile can have at most 3 models.");
-        process.exit(1);
+        throw new Error("Error: A profile can have at most 3 models.");
       }
 
       ensureProfilesFile();
@@ -90,10 +91,12 @@ export function profileCommand(): Command {
       if (opts.provider) profile.provider = opts.provider as ProviderType;
 
       data.profiles[name] = profile;
+      logger.debug(`profile add: syncing profile '${name}' to desktop`);
       syncer.sync(name, profile);
       writeJson(PROFILES_FILE, data);
+      logger.debug(`profile add: wrote ${PROFILES_FILE}`);
       console.log(`Profile '${name}' saved.`);
-    });
+    }));
 
   // --- update ---
   profile
@@ -105,12 +108,11 @@ export function profileCommand(): Command {
     .option("-t, --token <token>", "API key / token")
     .option("-u, --url <url>", "Base URL")
     .option("-p, --provider <provider>", "Provider type")
-    .action((name: string, opts: { model?: string[]; deleteModel?: string[]; token?: string; url?: string; provider?: string }) => {
+    .action(safeAction((name: string, opts: { model?: string[]; deleteModel?: string[]; token?: string; url?: string; provider?: string }) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
       if (!data.profiles[name]) {
-        console.error(`Profile '${name}' not found. Use 'profile add' to create it.`);
-        process.exit(1);
+        throw new Error(`Profile '${name}' not found. Use 'profile add' to create it.`);
       }
       const p = data.profiles[name];
 
@@ -162,24 +164,25 @@ export function profileCommand(): Command {
 
       const finalModels = p.models || (p.model ? [p.model] : []);
       if (finalModels.length > 3) {
-        console.error("Error: A profile can have at most 3 models.");
-        process.exit(1);
+        throw new Error("Error: A profile can have at most 3 models.");
       }
 
       if (opts.token) p.token = opts.token;
       if (opts.url) p.url = opts.url;
       if (opts.provider) p.provider = opts.provider as ProviderType;
 
+      logger.debug(`profile update: syncing profile '${name}' to desktop`);
       syncer.sync(name, p);
       writeJson(PROFILES_FILE, data);
+      logger.debug(`profile update: wrote ${PROFILES_FILE}`);
       console.log(`Profile '${name}' updated.`);
-    });
+    }));
 
   // --- list ---
   profile
     .command("list")
     .description("List all profiles")
-    .action(() => {
+    .action(safeAction(() => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
       const profiles = data.profiles;
@@ -208,7 +211,7 @@ export function profileCommand(): Command {
           p.url || "(default)",
         ));
       }
-    });
+    }));
 
   // --- view ---
   profile
@@ -216,13 +219,12 @@ export function profileCommand(): Command {
     .description("View full details of a profile (token unmasked)")
     .argument("<name>", "Profile name")
     .option("-j, --json", "Output as JSON")
-    .action((name: string, opts: { json?: boolean }) => {
+    .action(safeAction((name: string, opts: { json?: boolean }) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
       const p = data.profiles[name];
       if (!p) {
-        console.error(`Profile '${name}' not found.`);
-        process.exit(1);
+        throw new Error(`Profile '${name}' not found.`);
       }
       if (opts.json) {
         const { desktopId, ...rest } = p;
@@ -250,25 +252,26 @@ export function profileCommand(): Command {
         console.log(`URL:      ${p.url || "(default)"}`);
         console.log(`Provider: ${p.provider || "anthropic"}`);
       }
-    });
+    }));
 
   // --- remove ---
   profile
     .command("remove")
     .description("Remove a profile")
     .argument("<name>", "Profile name")
-    .action((name: string) => {
+    .action(safeAction((name: string) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
       if (!data.profiles[name]) {
-        console.error(`Profile '${name}' not found.`);
-        process.exit(1);
+        throw new Error(`Profile '${name}' not found.`);
       }
+      logger.debug(`profile remove: removing profile '${name}' from desktop sync`);
       syncer.remove(name, data.profiles[name]);
       delete data.profiles[name];
       writeJson(PROFILES_FILE, data);
+      logger.debug(`profile remove: wrote ${PROFILES_FILE}`);
       console.log(`Profile '${name}' removed.`);
-    });
+    }));
 
   // --- rename ---
   profile
@@ -276,16 +279,14 @@ export function profileCommand(): Command {
     .description("Rename a profile")
     .argument("<oldName>", "Current profile name")
     .argument("<newName>", "New profile name")
-    .action((oldName: string, newName: string) => {
+    .action(safeAction((oldName: string, newName: string) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
       if (!data.profiles[oldName]) {
-        console.error(`Profile '${oldName}' not found.`);
-        process.exit(1);
+        throw new Error(`Profile '${oldName}' not found.`);
       }
       if (data.profiles[newName]) {
-        console.error(`Profile '${newName}' already exists. Choose a different name.`);
-        process.exit(1);
+        throw new Error(`Profile '${newName}' already exists. Choose a different name.`);
       }
       data.profiles[newName] = data.profiles[oldName];
       delete data.profiles[oldName];
@@ -294,34 +295,34 @@ export function profileCommand(): Command {
       }
       writeJson(PROFILES_FILE, data);
       console.log(`Profile '${oldName}' renamed to '${newName}'.`);
-    });
+    }));
 
   // --- default ---
   profile
     .command("default")
     .description("Set the default profile")
     .argument("<name>", "Profile name to set as default")
-    .action((name: string) => {
+    .action(safeAction((name: string) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
       if (!data.profiles[name]) {
-        console.error(`Profile '${name}' not found.`);
-        process.exit(1);
+        throw new Error(`Profile '${name}' not found.`);
       }
       data.default = name;
+      logger.debug(`profile default: setting active desktop profile to '${name}'`);
       syncer.setActive(data.profiles[name]);
       writeJson(PROFILES_FILE, data);
+      logger.debug(`profile default: wrote ${PROFILES_FILE}`);
       console.log(`Default profile set to '${name}'.`);
-    });
+    }));
 
   // --- sync ---
   profile
     .command("sync")
     .description("Synchronize all CLI profiles to the Claude desktop app")
-    .action(() => {
+    .action(safeAction(() => {
       if (!syncer.isSupported()) {
-        console.error("Claude desktop app is not installed.");
-        process.exit(1);
+        throw new Error("Claude desktop app is not installed.");
       }
 
       ensureProfilesFile();
@@ -335,12 +336,14 @@ export function profileCommand(): Command {
 
       for (const name of names) {
         const p = data.profiles[name];
+        logger.debug(`profile sync: syncing '${name}' to desktop`);
         syncer.sync(name, p);
       }
 
       writeJson(PROFILES_FILE, data);
+      logger.debug(`profile sync: wrote ${PROFILES_FILE}`);
       console.log(`Synced ${names.length} profile(s) to the desktop app.`);
-    });
+    }));
 
   return profile;
 }
@@ -351,19 +354,20 @@ export function useCommand(): Command {
   return new Command("use")
     .description("Set a profile as the default")
     .argument("<name>", "Profile name")
-    .action((name: string) => {
+    .action(safeAction((name: string) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
       if (!data.profiles[name]) {
-        console.error(`Profile '${name}' not found.`);
-        process.exit(1);
+        throw new Error(`Profile '${name}' not found.`);
       }
 
       data.default = name;
+      logger.debug(`use: setting active desktop profile to '${name}'`);
       syncer.setActive(data.profiles[name]);
       writeJson(PROFILES_FILE, data);
+      logger.debug(`use: wrote ${PROFILES_FILE}`);
       console.log(`Default profile set to '${name}'.`);
-    });
+    }));
 }
 
 export function runCommand(): Command {
@@ -371,7 +375,7 @@ export function runCommand(): Command {
     .description("Launch Claude Code using the default or a specified profile")
     .allowUnknownOption()
     .argument("[args...]", "Optional profile name followed by extra arguments")
-    .action((args: string[]) => {
+    .action(safeAction((args: string[]) => {
       fixJsonFile(CLAUDE_JSON);
 
       ensureProfilesFile();
@@ -389,11 +393,11 @@ export function runCommand(): Command {
       }
 
       if (!profileName) {
-        console.error("No default profile set. Use 'cc-hub use <name>' first.");
-        process.exit(1);
+        throw new Error("No default profile set. Use 'cc-hub use <name>' first.");
       }
 
       const p = data.profiles[profileName];
+      logger.debug(`run: launching claude with profile '${profileName}', args=[${claudeArgs.join(", ")}]`);
       execClaude(profileName, p, claudeArgs);
-    });
+    }));
 }
