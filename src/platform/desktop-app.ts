@@ -57,10 +57,10 @@ export class MacOSDesktopApp implements IDesktopApp {
 export class WindowsDesktopApp implements IDesktopApp {
   private _buildCandidates(): string[] {
     const candidates = [
-      path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Claude"),
       path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Claude-3p"),
-      path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Claude"),
+      path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Claude"),
       path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Claude-3p"),
+      path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Claude"),
     ];
 
     // Dynamically discover MSIX package directories (Windows Store install)
@@ -73,8 +73,8 @@ export class WindowsDesktopApp implements IDesktopApp {
         const entries = fs.readdirSync(packagesDir);
         for (const entry of entries) {
           if (entry.startsWith("Claude_")) {
-            candidates.push(path.join(packagesDir, entry, "LocalCache", "Roaming", "Claude"));
             candidates.push(path.join(packagesDir, entry, "LocalCache", "Roaming", "Claude-3p"));
+            candidates.push(path.join(packagesDir, entry, "LocalCache", "Roaming", "Claude"));
           }
         }
       } catch {
