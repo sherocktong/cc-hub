@@ -31,7 +31,11 @@ export class MacOSDesktopApp implements IDesktopApp {
   }
 
   getConfigLibrary(): string | undefined {
-    return this.isInstalled() ? path.join(this.supportDir, "configLibrary") : undefined;
+    if (!this.isInstalled()) return undefined;
+    const configLib = path.join(this.supportDir, "configLibrary");
+    if (fs.existsSync(path.join(configLib, "_meta.json"))) return configLib;
+    if (fs.existsSync(configLib)) return configLib;
+    return configLib;
   }
 
   findBinary(): string | undefined {
@@ -100,14 +104,39 @@ export class WindowsDesktopApp implements IDesktopApp {
     return this._findSupportDir();
   }
 
-  getSessionsDir(): string | undefined {
-    const dir = this._findSupportDir();
-    return dir ? path.join(dir, "local-agent-mode-sessions") : undefined;
-  }
-
   getConfigLibrary(): string | undefined {
+    const candidates = this._buildCandidates();
+
+    for (const dir of candidates) {
+      const configLib = path.join(dir, "configLibrary");
+      if (fs.existsSync(path.join(configLib, "_meta.json"))) {
+        return configLib;
+      }
+    }
+
+    for (const dir of candidates) {
+      const configLib = path.join(dir, "configLibrary");
+      if (fs.existsSync(configLib)) {
+        return configLib;
+      }
+    }
+
     const dir = this._findSupportDir();
     return dir ? path.join(dir, "configLibrary") : undefined;
+  }
+
+  getSessionsDir(): string | undefined {
+    const candidates = this._buildCandidates();
+
+    for (const dir of candidates) {
+      const sessionsDir = path.join(dir, "local-agent-mode-sessions");
+      if (fs.existsSync(sessionsDir)) {
+        return sessionsDir;
+      }
+    }
+
+    const dir = this._findSupportDir();
+    return dir ? path.join(dir, "local-agent-mode-sessions") : undefined;
   }
 
   findBinary(): string | undefined {
