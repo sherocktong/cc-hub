@@ -55,23 +55,38 @@ export class MacOSDesktopApp implements IDesktopApp {
 }
 
 export class WindowsDesktopApp implements IDesktopApp {
-  private readonly candidates = [
-    path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Claude"),
-    path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Claude-3p"),
-    path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Claude"),
-    path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Claude-3p"),
-    path.join(
+  private _buildCandidates(): string[] {
+    const candidates = [
+      path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Claude"),
+      path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Claude-3p"),
+      path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Claude"),
+      path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "Claude-3p"),
+    ];
+
+    // Dynamically discover MSIX package directories (Windows Store install)
+    const packagesDir = path.join(
       process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
       "Packages",
-      "Claude_pzs8sxrjxfjjc",
-      "LocalCache",
-      "Roaming",
-      "Claude",
-    ),
-  ];
+    );
+    if (fs.existsSync(packagesDir)) {
+      try {
+        const entries = fs.readdirSync(packagesDir);
+        for (const entry of entries) {
+          if (entry.startsWith("Claude_")) {
+            candidates.push(path.join(packagesDir, entry, "LocalCache", "Roaming", "Claude"));
+            candidates.push(path.join(packagesDir, entry, "LocalCache", "Roaming", "Claude-3p"));
+          }
+        }
+      } catch {
+        // ignore permission/read errors
+      }
+    }
+
+    return candidates;
+  }
 
   private _findSupportDir(): string | undefined {
-    for (const dir of this.candidates) {
+    for (const dir of this._buildCandidates()) {
       if (fs.existsSync(dir)) return dir;
     }
     return undefined;
