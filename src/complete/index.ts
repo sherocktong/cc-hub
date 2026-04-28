@@ -1,12 +1,12 @@
-import { Command } from "commander";
+import { Command, Argument } from "commander";
 import { ZSH_COMPLETION } from "./zsh.js";
 import { BASH_COMPLETION } from "./bash.js";
 import { POWERSHELL_COMPLETION } from "./powershell.js";
 
-export function completeCommand(): Command {
-  return new Command("complete")
+export function completionCommand(): Command {
+  return new Command("completion")
     .description("Print shell completion script")
-    .argument("<shell>", "Shell type: bash, zsh, or powershell")
+    .addArgument(new Argument("<shell>", "Shell type: bash, zsh, or powershell").choices(["bash", "zsh", "powershell"]))
     .action((shell: string) => {
       switch (shell) {
         case "zsh":

@@ -8,7 +8,7 @@ export const POWERSHELL_COMPLETION = `Register-ArgumentCompleter -Native -Comman
     'hook:Manage Claude Code hooks in settings.json'
     'session:Manage Claude Code sessions'
     'provider:Manage provider types'
-    'complete:Print shell completion functions'
+    'completion:Print shell completion functions'
     'help:Display help for a command'
   )
 

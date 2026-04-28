@@ -148,13 +148,13 @@ cc-hub session clean -d 60 --dry-run
 
 ```bash
 # zsh — add to ~/.zshrc
-eval "$(cc-hub complete zsh)"
+eval "$(cc-hub completion zsh)"
 
 # bash — add to ~/.bashrc
-eval "$(cc-hub complete bash)"
+eval "$(cc-hub completion bash)"
 
 # PowerShell — add to $PROFILE
-Invoke-Expression (& cc-hub complete powershell | Out-String)
+Invoke-Expression (& cc-hub completion powershell | Out-String)
 ```
 
 Completes subcommands, profile names, and event types.

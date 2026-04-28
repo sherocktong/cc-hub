@@ -3,7 +3,7 @@ import { createRequire } from "module";
 import { profileCommand, useCommand, runCommand } from "./profiles/index.js";
 import { hooksCommand } from "./hooks/index.js";
 import { sessionCommand } from "./sessions/index.js";
-import { completeCommand } from "./complete/index.js";
+import { completionCommand } from "./complete/index.js";
 import { providerCommand } from "./provider/index.js";
 
 const _require = createRequire(import.meta.url);
@@ -21,7 +21,7 @@ program.addCommand(useCommand());
 program.addCommand(runCommand());
 program.addCommand(hooksCommand());
 program.addCommand(sessionCommand());
-program.addCommand(completeCommand());
+program.addCommand(completionCommand());
 program.addCommand(providerCommand());
 
 program.parse();

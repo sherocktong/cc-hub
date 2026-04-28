@@ -40,7 +40,7 @@ _cc-hub() {
   COMPREPLY=()
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="profile use run hook session provider complete help"
+  commands="profile use run hook session provider completion help"
 
   local profile_subcmds="add update list view remove rename default sync"
   local provider_subcmds="list"
