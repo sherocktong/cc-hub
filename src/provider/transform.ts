@@ -58,20 +58,31 @@ export function transformAnthropicToOpenAI(body: Record<string, any>): Record<st
       const contentParts = msg.content.filter(
         (b: any) =>
           (b.type === "text" && b.text) ||
-          (b.type === "image" && b.source),
+          (b.type === "image" &&
+            ((b.source?.type === "base64" && b.source.media_type && b.source.data) ||
+              (b.source?.type === "url" && b.source.url))),
       );
       if (contentParts.length > 0) {
-        const converted = contentParts.map((part: any) => {
-          if (part.type === "image") {
-            const url =
-              part.source?.type === "base64"
-                ? `data:${part.source.media_type};base64,${part.source.data}`
-                : part.source?.url ?? "";
-            return { type: "image_url", image_url: { url } };
-          }
-          return { type: "text", text: part.text };
-        });
-        if (converted.every((p: any) => p.type === "text")) {
+        const converted = contentParts
+          .map((part: any) => {
+            if (part.type === "image") {
+              if (part.source?.type === "base64" && part.source.media_type && part.source.data) {
+                const url = `data:${part.source.media_type};base64,${part.source.data}`;
+                logger.debug(`transform: converting base64 image (${part.source.media_type}, ${part.source.data.length} chars)`);
+                return { type: "image_url", image_url: { url } };
+              } else if (part.source?.type === "url" && part.source.url) {
+                logger.debug(`transform: converting image url (${part.source.url.slice(0, 80)}...)`);
+                return { type: "image_url", image_url: { url: part.source.url } };
+              }
+              logger.warn(`transform: skipping invalid image block (missing source fields)`);
+              return null;
+            }
+            return { type: "text", text: part.text };
+          })
+          .filter(Boolean);
+        if (converted.length === 0) {
+          // All content parts were invalid — nothing to add for this message
+        } else if (converted.every((p: any) => p.type === "text")) {
           messages.push({
             role: "user",
             content: converted.map((p: any) => p.text).join(""),
