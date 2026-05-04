@@ -126,6 +126,9 @@ _cc-hub() {
         session)
           if (( CURRENT == 2 )); then
             _describe -t session-subcmds 'session subcommand' session_subcmds
+          elif [[ $words[2] == "troubleshoot" ]]; then
+            _arguments -C -S \
+              '(-i --interactive)'{-i,--interactive}'[Open an interactive Claude Code window instead of a one-shot prompt]'
           fi
           ;;
       esac

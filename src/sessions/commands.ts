@@ -413,11 +413,11 @@ export function sessionCommand(): Command {
     .command("troubleshoot")
     .description("Launch Claude Code to troubleshoot a session file")
     .argument("<session>", "Session ID or partial match")
-    .option("-p, --project <project>", "Restrict to a specific project (partial match)")
-    .action(safeAction((sessionId: string, opts: { project?: string }) => {
-      logger.debug(`session troubleshoot: session=${sessionId} project=${opts.project || "(any)"}`);
+    .option("-i, --interactive", "Open an interactive Claude Code window instead of a one-shot prompt")
+    .action(safeAction((sessionId: string, opts: { interactive?: boolean }) => {
+      logger.debug(`session troubleshoot: session=${sessionId} interactive=${!!opts.interactive}`);
       console.log(`Searching for session '${sessionId}'...`);
-      const match = findSessionFile(sessionId, opts.project);
+      const match = findSessionFile(sessionId);
       if (!match) {
         throw new Error(`Session '${sessionId}' not found.`);
       }
@@ -426,13 +426,20 @@ export function sessionCommand(): Command {
       }
       console.log(`Found session file: ${match.filePath}`);
 
-      const promptText = `troubleshoot the session file ${match.filePath}`;
-      console.log("Launching Claude Code to troubleshoot...");
-      logger.info(`session troubleshoot: launching cc-hub run -p "${promptText}"`);
-
       const nodeBinary = process.argv[0];
       const scriptPath = process.argv[1];
-      const args = ["run", "-p", promptText];
+
+      let args: string[];
+      const promptText = `Please analyze this Claude Code session file: ${match.filePath}\n\nThe file contains a JSONL conversation history. Review it for any errors, anomalies, or issues (truncated responses, failed tool calls, error messages, corrupted data, etc.). Summarize what happened in the session and identify any problems that need attention. If the file is very large, focus on the most recent turns and any lines containing \"error\", \"exception\", \"failed\", or non-JSON content.`;
+      if (opts.interactive) {
+        console.log("Launching Claude Code (interactive)...");
+        logger.info(`session troubleshoot: launching cc-hub run (interactive) for ${match.filePath}`);
+        args = ["run", promptText];
+      } else {
+        console.log("Launching Claude Code with prompt...");
+        logger.info(`session troubleshoot: launching cc-hub run -p "${promptText}"`);
+        args = ["run", "-p", promptText];
+      }
 
       const result = spawnSync(nodeBinary, [scriptPath, ...args], {
         stdio: "inherit",

@@ -97,6 +97,13 @@ _cc-hub() {
     session)
       if [[ \${COMP_CWORD} -eq 2 ]]; then
         COMPREPLY=($(compgen -W "$session_subcmds" -- "$cur"))
+      elif [[ "\${COMP_WORDS[2]}" == "troubleshoot" ]]; then
+        if [[ "$prev" == "--interactive" || "$prev" == "-i" ]]; then
+          :
+        else
+          local troubleshoot_opts="--interactive -i"
+          COMPREPLY=($(compgen -W "$troubleshoot_opts" -- "$cur"))
+        fi
       fi
       ;;
   esac
