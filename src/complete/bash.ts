@@ -46,7 +46,7 @@ _cc-hub() {
   local provider_subcmds="list"
   local provider_types="anthropic openai"
   local hooks_subcmds="list add remove enable disable"
-  local session_subcmds="list show search ps stats clean"
+  local session_subcmds="list show search ps stats clean troubleshoot"
 
   # Top-level command
   if [[ \${COMP_CWORD} -eq 1 ]]; then

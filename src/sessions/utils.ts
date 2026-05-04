@@ -89,3 +89,54 @@ export function snippet(text: string, query: string, width = 150): string {
   const suffix = end < text.length ? "..." : "";
   return prefix + text.slice(start, end) + suffix;
 }
+
+export function findSessionFile(
+  sessionQuery: string,
+  projectQuery?: string,
+): { filePath: string; project: string } | null {
+  logger.debug(`sessions: findSessionFile query="${sessionQuery}" project=${projectQuery || "(any)"}`);
+
+  let searchDirs: string[] = [];
+
+  if (projectQuery) {
+    const projDir = findProjectDir(projectQuery);
+    if (!projDir) {
+      throw new Error(`No project matched: ${projectQuery}`);
+    }
+    searchDirs.push(path.join(PROJECTS_DIR, projDir));
+  } else {
+    try {
+      searchDirs = fs.readdirSync(PROJECTS_DIR).map((d) => path.join(PROJECTS_DIR, d));
+    } catch {
+      throw new Error(`No projects directory found at ${PROJECTS_DIR}`);
+    }
+  }
+
+  const matches: Array<{ filePath: string; project: string }> = [];
+
+  for (const dir of searchDirs) {
+    let files: string[];
+    try {
+      files = fs.readdirSync(dir).filter((f) => f.endsWith(".jsonl"));
+    } catch {
+      continue;
+    }
+    for (const file of files) {
+      const sessionId = file.replace(/\.jsonl$/, "");
+      if (sessionId.toLowerCase().includes(sessionQuery.toLowerCase())) {
+        matches.push({ filePath: path.join(dir, file), project: path.basename(dir) });
+      }
+    }
+  }
+
+  if (matches.length === 0) {
+    return null;
+  }
+
+  if (matches.length > 1) {
+    const lines = matches.map((m) => `  ${path.basename(m.filePath)} in ${decodePath(m.project)}`).join("\n");
+    throw new Error(`Multiple sessions matched '${sessionQuery}':\n${lines}\nUse --project to disambiguate.`);
+  }
+
+  return matches[0];
+}

@@ -14,7 +14,7 @@ export const POWERSHELL_COMPLETION = `Register-ArgumentCompleter -Native -Comman
 
   $profileSubcmds = @('add', 'update', 'list', 'view', 'remove', 'rename', 'default', 'sync')
   $hookSubcmds = @('list', 'add', 'remove', 'enable', 'disable')
-  $sessionSubcmds = @('list', 'show', 'search', 'ps', 'stats', 'clean')
+  $sessionSubcmds = @('list', 'show', 'search', 'ps', 'stats', 'clean', 'troubleshoot')
   $providerSubcmds = @('list')
 
   $tokens = $commandAst.CommandElements | ForEach-Object { $_.ToString() }

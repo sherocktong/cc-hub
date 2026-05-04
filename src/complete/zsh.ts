@@ -48,6 +48,7 @@ _cc-hub() {
     'ps:Show active Claude Code processes'
     'stats:Show summary statistics'
     'clean:Delete session JSONL files older than N days'
+    'troubleshoot:Launch Claude Code to troubleshoot a session file'
   )
 
   _cc_hub_profiles() {

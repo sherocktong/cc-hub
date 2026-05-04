@@ -1,11 +1,12 @@
 import { Command } from "commander";
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { PROJECTS_DIR, SESSIONS_DIR, CLAUDE_DIR, isDesktopAppInstalled } from "../config.js";
 import { createDesktopApp } from "../platform/index.js";
 import { encodePath, decodePath } from "./codec.js";
 import { getDirSize, formatSize } from "./stats.js";
-import { formatTimestamp, findProjectDir, parseSessionMeta, extractText, snippet } from "./utils.js";
+import { formatTimestamp, findProjectDir, parseSessionMeta, extractText, snippet, findSessionFile } from "./utils.js";
 import { safeAction } from "../logger.js";
 import * as logger from "../logger.js";
 
@@ -405,6 +406,37 @@ export function sessionCommand(): Command {
       console.log("");
       const verb = opts.dryRun ? "Would delete" : "Deleted";
       console.log(`${verb} ${deleted} file(s) (~${Math.floor(freed / 1024)}KB freed)`);
+    }));
+
+  // --- troubleshoot ---
+  session
+    .command("troubleshoot")
+    .description("Launch Claude Code to troubleshoot a session file")
+    .argument("<session>", "Session ID or partial match")
+    .option("-p, --project <project>", "Restrict to a specific project (partial match)")
+    .action(safeAction((sessionId: string, opts: { project?: string }) => {
+      logger.debug(`session troubleshoot: session=${sessionId} project=${opts.project || "(any)"}`);
+      const match = findSessionFile(sessionId, opts.project);
+      if (!match) {
+        throw new Error(`Session '${sessionId}' not found.`);
+      }
+      if (!fs.existsSync(match.filePath)) {
+        throw new Error(`Session file no longer exists: ${match.filePath}`);
+      }
+
+      const promptText = `troubleshoot the session file ${match.filePath}`;
+      logger.info(`session troubleshoot: launching cc-hub run -p "${promptText}"`);
+
+      const nodeBinary = process.argv[0];
+      const scriptPath = process.argv[1];
+      const args = ["run", "-p", promptText];
+
+      const result = spawnSync(nodeBinary, [scriptPath, ...args], {
+        stdio: "inherit",
+        shell: process.platform === "win32",
+      });
+
+      process.exit(result.status ?? 1);
     }));
 
   return session;
