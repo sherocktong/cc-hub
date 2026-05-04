@@ -416,6 +416,7 @@ export function sessionCommand(): Command {
     .option("-p, --project <project>", "Restrict to a specific project (partial match)")
     .action(safeAction((sessionId: string, opts: { project?: string }) => {
       logger.debug(`session troubleshoot: session=${sessionId} project=${opts.project || "(any)"}`);
+      console.log(`Searching for session '${sessionId}'...`);
       const match = findSessionFile(sessionId, opts.project);
       if (!match) {
         throw new Error(`Session '${sessionId}' not found.`);
@@ -423,8 +424,10 @@ export function sessionCommand(): Command {
       if (!fs.existsSync(match.filePath)) {
         throw new Error(`Session file no longer exists: ${match.filePath}`);
       }
+      console.log(`Found session file: ${match.filePath}`);
 
       const promptText = `troubleshoot the session file ${match.filePath}`;
+      console.log("Launching Claude Code to troubleshoot...");
       logger.info(`session troubleshoot: launching cc-hub run -p "${promptText}"`);
 
       const nodeBinary = process.argv[0];
