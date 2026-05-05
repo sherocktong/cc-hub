@@ -9,7 +9,7 @@ import {
 } from "../config.js";
 import type { ProfilesData, Profile, ProviderType } from "../types.js";
 import { createProfileSyncer } from "../platform/index.js";
-import { execClaude } from "./runner.js";
+import { execClaude, execClaudeBuiltIn, BUILT_IN_DEFAULT } from "./runner.js";
 import { safeAction } from "../logger.js";
 import * as logger from "../logger.js";
 
@@ -222,6 +222,11 @@ export function profileCommand(): Command {
     .action(safeAction((name: string, opts: { json?: boolean }) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
+
+      if (name === BUILT_IN_DEFAULT) {
+        throw new Error(`'${BUILT_IN_DEFAULT}' is not a stored profile. Use 'cc-hub run --built-in' or 'cc-hub use --built-in' for official Anthropic models.`);
+      }
+
       const p = data.profiles[name];
       if (!p) {
         throw new Error(`Profile '${name}' not found.`);
@@ -301,10 +306,24 @@ export function profileCommand(): Command {
   profile
     .command("default")
     .description("Set the default profile")
-    .argument("<name>", "Profile name to set as default")
-    .action(safeAction((name: string) => {
+    .option("--built-in", "Use official Anthropic models as default")
+    .argument("[name]", "Profile name to set as default (required unless --built-in)")
+    .action(safeAction((name: string | undefined, opts: { builtIn?: boolean }) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
+
+      if (opts.builtIn) {
+        data.default = BUILT_IN_DEFAULT;
+        writeJson(PROFILES_FILE, data);
+        logger.debug(`profile default: wrote ${PROFILES_FILE}`);
+        console.log("Default set to built-in official Anthropic models.");
+        return;
+      }
+
+      if (!name) {
+        throw new Error("Profile name is required. Use --built-in for official Anthropic models.");
+      }
+
       if (!data.profiles[name]) {
         throw new Error(`Profile '${name}' not found.`);
       }
@@ -335,6 +354,7 @@ export function profileCommand(): Command {
       }
 
       for (const name of names) {
+        if (name === BUILT_IN_DEFAULT) continue;
         const p = data.profiles[name];
         logger.debug(`profile sync: syncing '${name}' to desktop`);
         syncer.sync(name, p);
@@ -353,10 +373,24 @@ export function useCommand(): Command {
 
   return new Command("use")
     .description("Set a profile as the default")
-    .argument("<name>", "Profile name")
-    .action(safeAction((name: string) => {
+    .option("--built-in", "Use official Anthropic models as default")
+    .argument("[name]", "Profile name (required unless --built-in)")
+    .action(safeAction((name: string | undefined, opts: { builtIn?: boolean }) => {
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
+
+      if (opts.builtIn) {
+        data.default = BUILT_IN_DEFAULT;
+        writeJson(PROFILES_FILE, data);
+        logger.debug(`use: wrote ${PROFILES_FILE}`);
+        console.log("Default set to built-in official Anthropic models.");
+        return;
+      }
+
+      if (!name) {
+        throw new Error("Profile name is required. Use --built-in for official Anthropic models.");
+      }
+
       if (!data.profiles[name]) {
         throw new Error(`Profile '${name}' not found.`);
       }
@@ -373,13 +407,19 @@ export function useCommand(): Command {
 export function runCommand(): Command {
   return new Command("run")
     .description("Launch Claude Code using the default or a specified profile")
+    .option("--built-in", "Use official Anthropic models (no custom profile)")
     .allowUnknownOption()
     .argument("[args...]", "Optional profile name followed by extra arguments")
-    .action(safeAction((args: string[]) => {
+    .action(safeAction((args: string[], opts: { builtIn?: boolean }) => {
       fixJsonFile(CLAUDE_JSON);
 
       ensureProfilesFile();
       const data = readJson<ProfilesData>(PROFILES_FILE);
+
+      if (opts.builtIn) {
+        execClaudeBuiltIn(args);
+        return;
+      }
 
       let profileName = "";
       let claudeArgs: string[];
@@ -392,8 +432,13 @@ export function runCommand(): Command {
         claudeArgs = args;
       }
 
+      if (profileName === BUILT_IN_DEFAULT) {
+        execClaudeBuiltIn(claudeArgs);
+        return;
+      }
+
       if (!profileName) {
-        throw new Error("No default profile set. Use 'cc-hub use <name>' first.");
+        throw new Error("No default profile set. Use 'cc-hub use <name>' or 'cc-hub use --built-in' first.");
       }
 
       const p = data.profiles[profileName];

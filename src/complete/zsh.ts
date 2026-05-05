@@ -4,7 +4,7 @@ _cc-hub() {
   local -a commands
   commands=(
     'profile:Manage Claude CLI profiles'
-    'use:Launch Claude Code with a saved profile'
+    'use:Set a profile as the default'
     'run:Launch Claude Code using the default or a specified profile'
     'hook:Manage Claude Code hooks in settings.json'
     'session:Manage Claude Code sessions'
@@ -83,8 +83,12 @@ _cc-hub() {
         profile)
           if (( CURRENT == 2 )); then
             _describe -t profile-subcmds 'profile subcommand' profile_subcmds
-          elif [[ $words[2] == "view" || $words[2] == "remove" || $words[2] == "default" ]]; then
+          elif [[ $words[2] == "view" || $words[2] == "remove" ]]; then
             _cc_hub_profiles
+          elif [[ $words[2] == "default" ]]; then
+            _arguments -C -S \
+              '--built-in[Use official Anthropic models as default]' \
+              '*:profile:_cc_hub_profiles'
           elif [[ $words[2] == "rename" ]]; then
             if (( CURRENT == 3 )); then
               _cc_hub_profiles
@@ -116,7 +120,9 @@ _cc-hub() {
           fi
           ;;
         use|run)
-          _cc_hub_profiles
+          _arguments -C -S \
+            '--built-in[Use official Anthropic models (no custom profile)]' \
+            '*:profile:_cc_hub_profiles'
           ;;
         hook)
           if (( CURRENT == 2 )); then

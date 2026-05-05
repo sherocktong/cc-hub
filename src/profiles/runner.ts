@@ -12,6 +12,8 @@ import { startOpenAIProxy } from "../provider/index.js";
 import { createBinaryResolver } from "../platform/index.js";
 import * as logger from "../logger.js";
 
+export const BUILT_IN_DEFAULT = "__builtin__";
+
 export function resolveClaudeBinary(): string {
   return createBinaryResolver().resolve();
 }
@@ -121,4 +123,24 @@ export function execClaude(profileName: string, p: Profile, extraArgs: string[])
     });
     process.exit(result.status ?? 1);
   }
+}
+
+export function execClaudeBuiltIn(extraArgs: string[]): void {
+  const binary = resolveClaudeBinary();
+  const cmd = [binary, ...extraArgs];
+
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
+    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
+  };
+
+  logger.info(`Launching Claude with built-in official models: binary=${binary}`);
+
+  const result = spawnSync(cmd[0], cmd.slice(1), {
+    stdio: "inherit",
+    env,
+    shell: process.platform === "win32",
+  });
+  process.exit(result.status ?? 1);
 }

@@ -1,15 +1,17 @@
-export const BASH_COMPLETION = `_cc-hub_profiles() {
+export const BASH_COMPLETION = `_cc-hub_profile_names() {
   local profiles_file="\${CLAUDE_PROFILES_FILE:-\$HOME/.claude/profiles.json}"
   if [[ -f "$profiles_file" ]]; then
-    local names
-    names=$(command python3 -c "
+    command python3 -c "
 import json
 data = json.load(open('$profiles_file'))
 for name in data.get('profiles', {}):
     print(name)
-" 2>/dev/null)
-    COMPREPLY=($(compgen -W "$names" -- "\${cur}"))
+" 2>/dev/null
   fi
+}
+
+_cc-hub_profiles() {
+  COMPREPLY=($(compgen -W "$(_cc-hub_profile_names)" -- "\${cur}"))
 }
 
 _cc-hub_models_for_profile() {
@@ -60,8 +62,10 @@ _cc-hub() {
     profile)
       if [[ \${COMP_CWORD} -eq 2 ]]; then
         COMPREPLY=($(compgen -W "$profile_subcmds" -- "$cur"))
-      elif [[ "$prev" == "view" || "$prev" == "remove" || "$prev" == "default" ]]; then
+      elif [[ "$prev" == "view" || "$prev" == "remove" ]]; then
         _cc-hub_profiles
+      elif [[ "$prev" == "default" ]]; then
+        COMPREPLY=($(compgen -W "--built-in $(_cc-hub_profile_names)" -- "$cur"))
       elif [[ "$prev" == "rename" ]]; then
         _cc-hub_profiles
       elif [[ "$prev" == "profile" ]]; then
@@ -87,7 +91,11 @@ _cc-hub() {
       fi
       ;;
     use|run)
-      _cc-hub_profiles
+      if [[ "$prev" == "--built-in" ]]; then
+        :
+      else
+        COMPREPLY=($(compgen -W "--built-in $(_cc-hub_profile_names)" -- "$cur"))
+      fi
       ;;
     hook)
       if [[ \${COMP_CWORD} -eq 2 ]]; then
