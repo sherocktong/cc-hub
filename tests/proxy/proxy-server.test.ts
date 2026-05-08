@@ -328,3 +328,107 @@ describe("POST /v1/messages — tool use", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Proxy: model alias mapping
+// ---------------------------------------------------------------------------
+
+describe("POST /v1/messages — model alias mapping", () => {
+  beforeEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
+
+  it("replaces mapped alias with actual model name before forwarding to upstream", async () => {
+    let capturedBody: any;
+    const realFetch = globalThis.fetch.bind(globalThis);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : (input as URL).toString();
+      if (url.includes("127.0.0.1")) return realFetch(input, init);
+      capturedBody = JSON.parse((init as any).body);
+      return { ok: true, json: async () => openAIResponse("ok", "stop", "cmpl-mapped") } as Response;
+    });
+
+    const { baseUrl, stop } = await startOpenAIProxy(FAKE_BASE, FAKE_KEY, "gpt-4o", ["gpt-4o"], {
+      "claude-sonnet-4-5": "gpt-5.2",
+    });
+    try {
+      const res = await fetch(`${baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-5",
+          messages: [{ role: "user", content: "Hi" }],
+          stream: false,
+        }),
+      });
+      expect(res.status).toBe(200);
+      expect(capturedBody.model).toBe("gpt-5.2");
+    } finally {
+      stop();
+    }
+  });
+
+  it("returns the alias model name in the response, not the upstream actual model", async () => {
+    const realFetch = globalThis.fetch.bind(globalThis);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : (input as URL).toString();
+      if (url.includes("127.0.0.1")) return realFetch(input, init);
+      return {
+        ok: true,
+        json: async () => ({
+          id: "cmpl-alias",
+          model: "gpt-5.2",
+          choices: [{ message: { role: "assistant", content: "Hello" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 5, completion_tokens: 3 },
+        }),
+      } as Response;
+    });
+
+    const { baseUrl, stop } = await startOpenAIProxy(FAKE_BASE, FAKE_KEY, "gpt-4o", ["gpt-4o"], {
+      "claude-sonnet-4-5": "gpt-5.2",
+    });
+    try {
+      const res = await fetch(`${baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-5",
+          messages: [{ role: "user", content: "Hi" }],
+          stream: false,
+        }),
+      });
+      const json = await res.json() as any;
+      expect(json.model).toBe("claude-sonnet-4-5");
+    } finally {
+      stop();
+    }
+  });
+
+  it("passes through unmapped model names unchanged", async () => {
+    let capturedBody: any;
+    const realFetch = globalThis.fetch.bind(globalThis);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : (input as URL).toString();
+      if (url.includes("127.0.0.1")) return realFetch(input, init);
+      capturedBody = JSON.parse((init as any).body);
+      return { ok: true, json: async () => openAIResponse("ok") } as Response;
+    });
+
+    const { baseUrl, stop } = await startOpenAIProxy(FAKE_BASE, FAKE_KEY, "gpt-4o", ["gpt-4o"], {
+      "claude-sonnet-4-5": "gpt-5.2",
+    });
+    try {
+      await fetch(`${baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          messages: [{ role: "user", content: "Hi" }],
+          stream: false,
+        }),
+      });
+      expect(capturedBody.model).toBe("gpt-4o");
+    } finally {
+      stop();
+    }
+  });
+});

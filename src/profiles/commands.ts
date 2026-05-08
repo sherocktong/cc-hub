@@ -45,7 +45,7 @@ function formatModels(p: Profile): string {
   return p.model || "(unset)";
 }
 
-function isAnthropicModel(model: string): boolean {
+export function isAnthropicModel(model: string): boolean {
   const anthropicAliases = ["opus", "sonnet", "haiku", "best", "default", "opusplan", "opus[1m]", "sonnet[1m]"];
   const lower = model.toLowerCase();
   if (anthropicAliases.includes(lower)) return true;

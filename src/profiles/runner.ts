@@ -101,6 +101,7 @@ export function execClaude(profileName: string, p: Profile, extraArgs: string[])
       p.token || "",
       firstModel || "gpt-4o",
       allModels,
+      {},
     ).then(({ baseUrl, stop }) => {
       env.ANTHROPIC_BASE_URL = baseUrl;
       logger.debug(`execClaude: proxy running at ${baseUrl}`);

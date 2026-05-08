@@ -11,6 +11,7 @@ export async function startOpenAIProxy(
   apiKey: string,
   model: string,
   models: string[] = [],
+  modelMappings: Record<string, string> = {},
 ): Promise<{ baseUrl: string; stop: () => void }> {
   const base = targetUrl.replace(/\/+$/, "");
 
@@ -40,7 +41,9 @@ export async function startOpenAIProxy(
         }
 
         const isStream = !!parsed.stream;
-        const openaiBody = transformAnthropicToOpenAI({ ...parsed, stream: false });
+        const requestModel = parsed.model ?? model;
+        const actualModel = modelMappings[requestModel] || requestModel;
+        const openaiBody = transformAnthropicToOpenAI({ ...parsed, model: actualModel, stream: false });
 
         if (isStream) {
           res.writeHead(200, {

@@ -200,7 +200,7 @@ export function transformOpenAIResponseToAnthropic(
     id: openaiResponse.id ?? `msg_${Date.now()}`,
     type: "message",
     role: "assistant",
-    model: openaiResponse.model ?? originalModel,
+    model: originalModel,
     content,
     stop_reason: finishMap[choice.finish_reason] ?? "end_turn",
     stop_sequence: null,

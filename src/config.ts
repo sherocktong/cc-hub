@@ -74,6 +74,7 @@ export function fixJsonFile(filePath: string, fallback: Record<string, unknown> 
   // Try normal parse — if valid, back it up
   try {
     JSON.parse(raw);
+    fs.mkdirSync(CLAUDE_DIR, { recursive: true });
     fs.copyFileSync(filePath, backupPath);
     return;
   } catch {
@@ -118,14 +119,24 @@ export function fixJsonFile(filePath: string, fallback: Record<string, unknown> 
     console.error(`Fixed invalid JSON in ${path.basename(filePath)}.`);
   } catch {
     // Unrecoverable — restore backup or write fallback
+    let restored = false;
     if (fs.existsSync(backupPath)) {
-      fs.copyFileSync(backupPath, filePath);
-      logger.warn(`Restored ${path.basename(filePath)} from backup.`);
-      console.error(`Restored ${path.basename(filePath)} from backup.`);
-    } else {
+      try {
+        const backupRaw = fs.readFileSync(backupPath, "utf-8");
+        JSON.parse(backupRaw);
+        fs.copyFileSync(backupPath, filePath);
+        restored = true;
+        logger.warn(`Restored ${path.basename(filePath)} from backup.`);
+        console.error(`Restored ${path.basename(filePath)} from backup.`);
+      } catch {
+        logger.error(`Backup ${path.basename(backupPath)} is also corrupt; using fallback.`);
+        console.error(`Backup ${path.basename(backupPath)} is also corrupt; using fallback.`);
+      }
+    }
+    if (!restored) {
       writeJson(filePath, fallback);
-      logger.error(`Could not fix ${path.basename(filePath)}, no backup found, reset to default.`);
-      console.error(`Could not fix ${path.basename(filePath)}, no backup found, reset to default.`);
+      logger.error(`Could not fix ${path.basename(filePath)}, no valid backup found, reset to default.`);
+      console.error(`Could not fix ${path.basename(filePath)}, no valid backup found, reset to default.`);
     }
   }
 }

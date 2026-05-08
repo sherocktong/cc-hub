@@ -17,9 +17,20 @@ interface DesktopProfileData {
   inferenceGatewayApiKey?: string;
   inferenceGatewayAuthScheme?: string;
   inferenceModels?: Array<{ name: string; supports1m: boolean }>;
+  inferenceModelMappings?: Array<{ alias: string; actual: string }>;
 }
 
-function toDesktopProfile(p: Profile): DesktopProfileData {
+const ANTHROPIC_ALIASES = ["claude-sonnet-4-5", "claude-opus-4-7", "claude-haiku-4-5-20251001"];
+
+export function isAnthropicModel(model: string): boolean {
+  const anthropicAliases = ["opus", "sonnet", "haiku", "best", "default", "opusplan", "opus[1m]", "sonnet[1m]"];
+  const lower = model.toLowerCase();
+  if (anthropicAliases.includes(lower)) return true;
+  if (lower.startsWith("claude-")) return true;
+  return false;
+}
+
+export function toDesktopProfile(p: Profile): DesktopProfileData {
   const models = p.models || (p.model ? [p.model] : []);
   const isAnthropic = p.provider === "anthropic" || (!p.provider && !p.url);
 
@@ -30,13 +41,27 @@ function toDesktopProfile(p: Profile): DesktopProfileData {
     };
   }
 
-  return {
+  const mappings: Array<{ alias: string; actual: string }> = [];
+  const mappedModels = models.map((m, index) => {
+    if (isAnthropicModel(m)) return m;
+    const alias = ANTHROPIC_ALIASES[Math.min(index, ANTHROPIC_ALIASES.length - 1)];
+    mappings.push({ alias, actual: m });
+    return alias;
+  });
+
+  const result: DesktopProfileData = {
     inferenceProvider: "gateway",
     inferenceGatewayBaseUrl: p.url || undefined,
     inferenceGatewayApiKey: p.token || undefined,
     inferenceGatewayAuthScheme: "bearer",
-    inferenceModels: models.map((m) => ({ name: m, supports1m: true })),
+    inferenceModels: mappedModels.map((m) => ({ name: m, supports1m: true })),
   };
+
+  if (mappings.length > 0) {
+    result.inferenceModelMappings = mappings;
+  }
+
+  return result;
 }
 
 export class DesktopProfileSyncer implements IProfileSyncer {
