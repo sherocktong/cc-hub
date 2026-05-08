@@ -38,6 +38,7 @@ function updateSettingsForProfile(p: Profile): void {
     "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION",
     "ANTHROPIC_CUSTOM_MODEL_OPTION",
+    "ANTHROPIC_API_KEY"
   ];
   if (settings.env) {
     const env = settings.env as Record<string, unknown>;
