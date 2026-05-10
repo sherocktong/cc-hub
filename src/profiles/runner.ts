@@ -107,7 +107,7 @@ export function execClaude(profileName: string, p: Profile, extraArgs: string[])
       env.ANTHROPIC_BASE_URL = baseUrl;
       logger.debug(`execClaude: proxy running at ${baseUrl}`);
 
-      const child = spawn(cmd[0], cmd.slice(1), { stdio: "inherit", env, shell: process.platform === "win32" });
+      const child = spawn(cmd[0], cmd.slice(1), { stdio: "inherit", env });
       child.on("close", (code) => {
         stop();
         process.exit(code ?? 1);
@@ -121,7 +121,6 @@ export function execClaude(profileName: string, p: Profile, extraArgs: string[])
     const result = spawnSync(cmd[0], cmd.slice(1), {
       stdio: "inherit",
       env,
-      shell: process.platform === "win32",
     });
     process.exit(result.status ?? 1);
   }
@@ -142,7 +141,6 @@ export function execClaudeBuiltIn(extraArgs: string[]): void {
   const result = spawnSync(cmd[0], cmd.slice(1), {
     stdio: "inherit",
     env,
-    shell: process.platform === "win32",
   });
   process.exit(result.status ?? 1);
 }
