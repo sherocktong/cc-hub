@@ -9,6 +9,7 @@ _cc-hub() {
     'hook:Manage Claude Code hooks in settings.json'
     'session:Manage Claude Code sessions'
     'provider:Manage provider types'
+    'cache:Manage Claude Code cache and backup files'
     'completion:Print shell completion functions'
     'help:Display help for a command'
   )
@@ -16,6 +17,11 @@ _cc-hub() {
   local -a provider_subcmds
   provider_subcmds=(
     'list:List available provider types'
+  )
+
+  local -a cache_subcmds
+  cache_subcmds=(
+    'restore:Restore ~/.claude/.claude.json.backup to ~/.claude.json'
   )
 
 
@@ -127,6 +133,11 @@ _cc-hub() {
         hook)
           if (( CURRENT == 2 )); then
             _describe -t hooks-subcmds 'hook subcommand' hooks_subcmds
+          fi
+          ;;
+        cache)
+          if (( CURRENT == 2 )); then
+            _describe -t cache-subcmds 'cache subcommand' cache_subcmds
           fi
           ;;
         session)

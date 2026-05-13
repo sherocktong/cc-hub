@@ -5,6 +5,7 @@ import { hooksCommand } from "./hooks/index.js";
 import { sessionCommand } from "./sessions/index.js";
 import { completionCommand } from "./complete/index.js";
 import { providerCommand, proxyCommand } from "./provider/index.js";
+import { cacheCommand } from "./cache/index.js";
 import { installGlobalExceptionHandlers, setLogLevel } from "./logger.js";
 import { SETTINGS_FILE, ensureSettingsFile, readJson } from "./config.js";
 import type { SettingsData } from "./types.js";
@@ -34,6 +35,7 @@ program.addCommand(sessionCommand());
 program.addCommand(completionCommand());
 program.addCommand(providerCommand());
 program.addCommand(proxyCommand());
+program.addCommand(cacheCommand());
 
 try {
   program.parse();

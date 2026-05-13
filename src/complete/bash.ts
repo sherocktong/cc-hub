@@ -42,13 +42,14 @@ _cc-hub() {
   COMPREPLY=()
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="profile use run hook session provider completion help"
+  commands="profile use run hook session provider cache completion help"
 
   local profile_subcmds="add update list view remove rename default sync"
   local provider_subcmds="list"
   local provider_types="anthropic openai"
   local hooks_subcmds="list add remove enable disable"
   local session_subcmds="list show search ps stats clean troubleshoot"
+  local cache_subcmds="restore"
 
   # Top-level command
   if [[ \${COMP_CWORD} -eq 1 ]]; then
@@ -100,6 +101,11 @@ _cc-hub() {
     hook)
       if [[ \${COMP_CWORD} -eq 2 ]]; then
         COMPREPLY=($(compgen -W "$hooks_subcmds" -- "$cur"))
+      fi
+      ;;
+    cache)
+      if [[ \${COMP_CWORD} -eq 2 ]]; then
+        COMPREPLY=($(compgen -W "$cache_subcmds" -- "$cur"))
       fi
       ;;
     session)

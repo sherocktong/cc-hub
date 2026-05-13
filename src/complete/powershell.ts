@@ -8,6 +8,7 @@ export const POWERSHELL_COMPLETION = `Register-ArgumentCompleter -Native -Comman
     'hook:Manage Claude Code hooks in settings.json'
     'session:Manage Claude Code sessions'
     'provider:Manage provider types'
+    'cache:Manage Claude Code cache and backup files'
     'completion:Print shell completion functions'
     'help:Display help for a command'
   )
@@ -15,6 +16,7 @@ export const POWERSHELL_COMPLETION = `Register-ArgumentCompleter -Native -Comman
   $profileSubcmds = @('add', 'update', 'list', 'view', 'remove', 'rename', 'default', 'sync')
   $hookSubcmds = @('list', 'add', 'remove', 'enable', 'disable')
   $sessionSubcmds = @('list', 'show', 'search', 'ps', 'stats', 'clean', 'troubleshoot')
+  $cacheSubcmds = @('restore')
   $providerSubcmds = @('list')
 
   $tokens = $commandAst.CommandElements | ForEach-Object { $_.ToString() }
@@ -52,6 +54,12 @@ export const POWERSHELL_COMPLETION = `Register-ArgumentCompleter -Native -Comman
     'provider' {
       if ($tokens.Count -eq 2 -or ($tokens.Count -eq 3 -and $wordToComplete -ne '')) {
         $providerSubcmds | ForEach-Object { if ($_ -like "$wordToComplete*") { $_ } }
+        return
+      }
+    }
+    'cache' {
+      if ($tokens.Count -eq 2 -or ($tokens.Count -eq 3 -and $wordToComplete -ne '')) {
+        $cacheSubcmds | ForEach-Object { if ($_ -like "$wordToComplete*") { $_ } }
         return
       }
     }
