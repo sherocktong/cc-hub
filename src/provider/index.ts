@@ -25,13 +25,17 @@ const PROVIDERS = [
   },
 ];
 
-const ANTHROPIC_ALIASES = ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5-20251001"];
+export const ANTHROPIC_ALIASES = ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"];
 
-function isAnthropicModel(model: string): boolean {
+export function isAnthropicModel(model: string): boolean {
   const anthropicAliases = ["opus", "sonnet", "haiku", "best", "default", "opusplan", "opus[1m]", "sonnet[1m]"];
   const lower = model.toLowerCase();
   if (anthropicAliases.includes(lower)) return true;
   if (lower.startsWith("claude-")) return true;
+  for (let index = 0; index < anthropicAliases.length; index++) {
+    const element = anthropicAliases[index];
+    if (lower.includes(element)) return true;
+  }
   return false;
 }
 

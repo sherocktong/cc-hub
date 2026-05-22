@@ -70,14 +70,14 @@ describe("toDesktopProfile", () => {
     expect(result.inferenceModels).toEqual([
       { name: "claude-sonnet-4-6", supports1m: true },
       { name: "claude-opus-4-7", supports1m: true },
-      { name: "claude-haiku-4-5-20251001", supports1m: true },
-      { name: "claude-haiku-4-5-20251001", supports1m: true },
+      { name: "claude-haiku-4-5", supports1m: true },
+      { name: "claude-haiku-4-5", supports1m: true },
     ]);
     expect(result.inferenceModelMappings).toEqual([
       { alias: "claude-sonnet-4-6", actual: "gpt-5.2" },
       { alias: "claude-opus-4-7", actual: "gpt-5" },
-      { alias: "claude-haiku-4-5-20251001", actual: "gpt-4o" },
-      { alias: "claude-haiku-4-5-20251001", actual: "gpt-3.5-turbo" },
+      { alias: "claude-haiku-4-5", actual: "gpt-4o" },
+      { alias: "claude-haiku-4-5", actual: "gpt-3.5-turbo" },
     ]);
   });
 
@@ -91,11 +91,11 @@ describe("toDesktopProfile", () => {
       { name: "claude-sonnet-4-6", supports1m: true },
       { name: "claude-opus-4-7", supports1m: true },
       { name: "claude-opus-4-7", supports1m: true },
-      { name: "claude-haiku-4-5-20251001", supports1m: true },
+      { name: "claude-haiku-4-5", supports1m: true },
     ]);
     expect(result.inferenceModelMappings).toEqual([
       { alias: "claude-opus-4-7", actual: "gpt-5.2" },
-      { alias: "claude-haiku-4-5-20251001", actual: "gpt-4o" },
+      { alias: "claude-haiku-4-5", actual: "gpt-4o" },
     ]);
   });
 

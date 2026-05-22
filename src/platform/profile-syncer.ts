@@ -5,6 +5,7 @@ import type { IProfileSyncer, IDesktopApp } from "./interfaces.js";
 import type { Profile } from "../types.js";
 import { readJson, writeJson } from "../config.js";
 import * as logger from "../logger.js";
+import { ANTHROPIC_ALIASES, isAnthropicModel } from "../provider/index.js";
 
 interface DesktopMeta {
   appliedId?: string;
@@ -18,16 +19,6 @@ interface DesktopProfileData {
   inferenceGatewayAuthScheme?: string;
   inferenceModels?: Array<{ name: string; supports1m: boolean }>;
   inferenceModelMappings?: Array<{ alias: string; actual: string }>;
-}
-
-const ANTHROPIC_ALIASES = ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5-20251001"];
-
-export function isAnthropicModel(model: string): boolean {
-  const anthropicAliases = ["opus", "sonnet", "haiku", "best", "default", "opusplan", "opus[1m]", "sonnet[1m]"];
-  const lower = model.toLowerCase();
-  if (anthropicAliases.includes(lower)) return true;
-  if (lower.startsWith("claude-")) return true;
-  return false;
 }
 
 export function toDesktopProfile(p: Profile): DesktopProfileData {
@@ -165,3 +156,5 @@ export class DesktopProfileSyncer implements IProfileSyncer {
     writeJson(path.join(configLib, `${id}.json`), data);
   }
 }
+export { isAnthropicModel };
+

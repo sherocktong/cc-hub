@@ -12,6 +12,7 @@ import { createProfileSyncer } from "../platform/index.js";
 import { execClaude, execClaudeBuiltIn, BUILT_IN_DEFAULT } from "./runner.js";
 import { safeAction } from "../logger.js";
 import * as logger from "../logger.js";
+import { isAnthropicModel } from "../provider/index.js";
 
 function maskToken(token: string): string {
   if (!token) return "(unset)";
@@ -43,14 +44,6 @@ function formatModels(p: Profile): string {
     return joined;
   }
   return p.model || "(unset)";
-}
-
-export function isAnthropicModel(model: string): boolean {
-  const anthropicAliases = ["opus", "sonnet", "haiku", "best", "default", "opusplan", "opus[1m]", "sonnet[1m]"];
-  const lower = model.toLowerCase();
-  if (anthropicAliases.includes(lower)) return true;
-  if (lower.startsWith("claude-")) return true;
-  return false;
 }
 
 function collect(value: string, previous: string[]): string[] {
