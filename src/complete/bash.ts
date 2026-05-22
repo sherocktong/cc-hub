@@ -44,7 +44,7 @@ _cc-hub() {
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
   commands="profile use run hook session provider cache completion help"
 
-  local profile_subcmds="add update list view remove rename default sync"
+  local profile_subcmds="add update list view remove rename default sync export"
   local provider_subcmds="list"
   local provider_types="anthropic openai"
   local hooks_subcmds="list add remove enable disable"
@@ -63,7 +63,7 @@ _cc-hub() {
     profile)
       if [[ \${COMP_CWORD} -eq 2 ]]; then
         COMPREPLY=($(compgen -W "$profile_subcmds" -- "$cur"))
-      elif [[ "$prev" == "view" || "$prev" == "remove" ]]; then
+      elif [[ "$prev" == "view" || "$prev" == "remove" || "$prev" == "export" ]]; then
         _cc-hub_profiles
       elif [[ "$prev" == "default" ]]; then
         COMPREPLY=($(compgen -W "--built-in $(_cc-hub_profile_names)" -- "$cur"))

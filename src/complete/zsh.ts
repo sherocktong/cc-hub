@@ -35,6 +35,7 @@ _cc-hub() {
     'rename:Rename a profile'
     'default:Set the default profile'
     'sync:Synchronize all CLI profiles to the desktop app'
+    'export:Export a profile to a settings file'
   )
 
   local -a hooks_subcmds
@@ -89,7 +90,7 @@ _cc-hub() {
         profile)
           if (( CURRENT == 2 )); then
             _describe -t profile-subcmds 'profile subcommand' profile_subcmds
-          elif [[ $words[2] == "view" || $words[2] == "remove" ]]; then
+          elif [[ $words[2] == "view" || $words[2] == "remove" || $words[2] == "export" ]]; then
             _cc_hub_profiles
           elif [[ $words[2] == "default" ]]; then
             _arguments -C -S \

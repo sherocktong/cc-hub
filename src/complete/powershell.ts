@@ -13,7 +13,7 @@ export const POWERSHELL_COMPLETION = `Register-ArgumentCompleter -Native -Comman
     'help:Display help for a command'
   )
 
-  $profileSubcmds = @('add', 'update', 'list', 'view', 'remove', 'rename', 'default', 'sync')
+  $profileSubcmds = @('add', 'update', 'list', 'view', 'remove', 'rename', 'default', 'sync', 'export')
   $hookSubcmds = @('list', 'add', 'remove', 'enable', 'disable')
   $sessionSubcmds = @('list', 'show', 'search', 'ps', 'stats', 'clean', 'troubleshoot')
   $cacheSubcmds = @('restore')

@@ -1,12 +1,16 @@
 import { Command } from "commander";
 import {
   PROFILES_FILE,
+  CLAUDE_DIR,
   CLAUDE_JSON,
+  SETTINGS_FILE,
   ensureProfilesFile,
+  ensureSettingsFile,
   readJson,
   writeJson,
   fixJsonFile,
 } from "../config.js";
+import path from "node:path";
 import type { ProfilesData, Profile, ProviderType } from "../types.js";
 import { createProfileSyncer } from "../platform/index.js";
 import { execClaude, execClaudeBuiltIn, BUILT_IN_DEFAULT } from "./runner.js";
@@ -356,6 +360,63 @@ export function profileCommand(): Command {
       writeJson(PROFILES_FILE, data);
       logger.debug(`profile sync: wrote ${PROFILES_FILE}`);
       console.log(`Synced ${names.length} profile(s) to the desktop app.`);
+    }));
+
+  // --- export ---
+  profile
+    .command("export")
+    .description("Export a profile to a settings file")
+    .argument("<name>", "Profile name")
+    .action(safeAction((name: string) => {
+      ensureProfilesFile();
+      const data = readJson<ProfilesData>(PROFILES_FILE);
+      const p = data.profiles[name];
+      if (!p) {
+        throw new Error(`Profile '${name}' not found.`);
+      }
+
+      ensureSettingsFile();
+      const settings = readJson<SettingsData>(SETTINGS_FILE);
+
+      const exported: SettingsData = Object.fromEntries(
+        Object.entries(settings).filter(([key]) => !key.startsWith("_"))
+      ) as SettingsData;
+      const env: Record<string, string> = {
+        ...(typeof exported.env === "object" && exported.env !== null
+          ? (exported.env as Record<string, string>)
+          : {}),
+      };
+
+      if (p.token) env.ANTHROPIC_AUTH_TOKEN = p.token;
+      if (p.url) env.ANTHROPIC_BASE_URL = p.url;
+
+      const models = p.models || (p.model ? [p.model] : []);
+      if (models.length > 0) {
+        if (models[0]) {
+          env.ANTHROPIC_DEFAULT_SONNET_MODEL = models[0];
+          env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME = models[0];
+          env.ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION = `Custom: ${models[0]}`;
+        }
+        if (models[1]) {
+          env.ANTHROPIC_DEFAULT_OPUS_MODEL = models[1];
+          env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME = models[1];
+          env.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION = `Custom: ${models[1]}`;
+        }
+        if (models[2]) {
+          env.ANTHROPIC_DEFAULT_HAIKU_MODEL = models[2];
+          env.ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME = models[2];
+          env.ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION = `Custom: ${models[2]}`;
+        }
+      }
+
+      env.CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1";
+      env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
+
+      exported.env = env;
+
+      const exportPath = path.join(CLAUDE_DIR, `settings.${name}.json`);
+      writeJson(exportPath, exported);
+      console.log(`Profile '${name}' exported to ${exportPath}`);
     }));
 
   return profile;
