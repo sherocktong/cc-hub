@@ -379,7 +379,7 @@ export function profileCommand(): Command {
       const settings = readJson<SettingsData>(SETTINGS_FILE);
 
       const exported: SettingsData = Object.fromEntries(
-        Object.entries(settings).filter(([key]) => !key.startsWith("_"))
+        Object.entries(settings).filter(([key]) => !key.startsWith("_") && key != "env")
       ) as SettingsData;
       const env: Record<string, string> = {
         ...(typeof exported.env === "object" && exported.env !== null
