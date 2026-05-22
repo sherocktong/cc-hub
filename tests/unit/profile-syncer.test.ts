@@ -11,7 +11,7 @@ describe("isAnthropicModel", () => {
   });
 
   it("returns true for claude- prefixed models", () => {
-    expect(isAnthropicModel("claude-sonnet-4-5")).toBe(true);
+    expect(isAnthropicModel("claude-sonnet-4-6")).toBe(true);
     expect(isAnthropicModel("claude-opus-4-7")).toBe(true);
     expect(isAnthropicModel("claude-haiku-3")).toBe(true);
   });
@@ -28,12 +28,12 @@ describe("toDesktopProfile", () => {
   it("passes through Anthropic models for 1p provider", () => {
     const p: Profile = {
       provider: "anthropic",
-      models: ["claude-sonnet-4-5", "claude-opus-4-7"],
+      models: ["claude-sonnet-4-6", "claude-opus-4-7"],
     };
     const result = toDesktopProfile(p);
     expect(result.inferenceProvider).toBe("1p");
     expect(result.inferenceModels).toEqual([
-      { name: "claude-sonnet-4-5", supports1m: true },
+      { name: "claude-sonnet-4-6", supports1m: true },
       { name: "claude-opus-4-7", supports1m: true },
     ]);
     expect(result.inferenceModelMappings).toBeUndefined();
@@ -49,11 +49,11 @@ describe("toDesktopProfile", () => {
     const result = toDesktopProfile(p);
     expect(result.inferenceProvider).toBe("gateway");
     expect(result.inferenceModels).toEqual([
-      { name: "claude-sonnet-4-5", supports1m: true },
+      { name: "claude-sonnet-4-6", supports1m: true },
       { name: "claude-opus-4-7", supports1m: true },
     ]);
     expect(result.inferenceModelMappings).toEqual([
-      { alias: "claude-sonnet-4-5", actual: "gpt-5.2" },
+      { alias: "claude-sonnet-4-6", actual: "gpt-5.2" },
       { alias: "claude-opus-4-7", actual: "gpt-4o" },
     ]);
     expect(result.inferenceGatewayBaseUrl).toBe("https://api.openai.com");
@@ -68,13 +68,13 @@ describe("toDesktopProfile", () => {
     };
     const result = toDesktopProfile(p);
     expect(result.inferenceModels).toEqual([
-      { name: "claude-sonnet-4-5", supports1m: true },
+      { name: "claude-sonnet-4-6", supports1m: true },
       { name: "claude-opus-4-7", supports1m: true },
       { name: "claude-haiku-4-5-20251001", supports1m: true },
       { name: "claude-haiku-4-5-20251001", supports1m: true },
     ]);
     expect(result.inferenceModelMappings).toEqual([
-      { alias: "claude-sonnet-4-5", actual: "gpt-5.2" },
+      { alias: "claude-sonnet-4-6", actual: "gpt-5.2" },
       { alias: "claude-opus-4-7", actual: "gpt-5" },
       { alias: "claude-haiku-4-5-20251001", actual: "gpt-4o" },
       { alias: "claude-haiku-4-5-20251001", actual: "gpt-3.5-turbo" },
@@ -84,11 +84,11 @@ describe("toDesktopProfile", () => {
   it("only maps non-Anthropic models in mixed profiles", () => {
     const p: Profile = {
       provider: "openai",
-      models: ["claude-sonnet-4-5", "gpt-5.2", "claude-opus-4-7", "gpt-4o"],
+      models: ["claude-sonnet-4-6", "gpt-5.2", "claude-opus-4-7", "gpt-4o"],
     };
     const result = toDesktopProfile(p);
     expect(result.inferenceModels).toEqual([
-      { name: "claude-sonnet-4-5", supports1m: true },
+      { name: "claude-sonnet-4-6", supports1m: true },
       { name: "claude-opus-4-7", supports1m: true },
       { name: "claude-opus-4-7", supports1m: true },
       { name: "claude-haiku-4-5-20251001", supports1m: true },
@@ -117,8 +117,8 @@ describe("toDesktopProfile", () => {
     };
     const result = toDesktopProfile(p);
     expect(result.inferenceProvider).toBe("gateway");
-    expect(result.inferenceModels).toEqual([{ name: "claude-sonnet-4-5", supports1m: true }]);
-    expect(result.inferenceModelMappings).toEqual([{ alias: "claude-sonnet-4-5", actual: "gpt-5.2" }]);
+    expect(result.inferenceModels).toEqual([{ name: "claude-sonnet-4-6", supports1m: true }]);
+    expect(result.inferenceModelMappings).toEqual([{ alias: "claude-sonnet-4-6", actual: "gpt-5.2" }]);
   });
 
   it("handles empty models gracefully", () => {

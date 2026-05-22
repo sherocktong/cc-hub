@@ -20,7 +20,7 @@ interface DesktopProfileData {
   inferenceModelMappings?: Array<{ alias: string; actual: string }>;
 }
 
-const ANTHROPIC_ALIASES = ["claude-sonnet-4-5", "claude-opus-4-7", "claude-haiku-4-5-20251001"];
+const ANTHROPIC_ALIASES = ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5-20251001"];
 
 export function isAnthropicModel(model: string): boolean {
   const anthropicAliases = ["opus", "sonnet", "haiku", "best", "default", "opusplan", "opus[1m]", "sonnet[1m]"];
