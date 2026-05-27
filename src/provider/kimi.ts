@@ -1,16 +1,27 @@
-export function sanitizeToolId(id: string): string {
-  let sanitized = id.replace(/[^a-zA-Z0-9_-]/g, "_");
-  if (!/^[a-zA-Z]/.test(sanitized)) {
-    sanitized = "tc_" + sanitized;
-  }
-  return sanitized;
-}
-
 import * as logger from "../logger.js";
+import { sanitizeToolId } from "./transform.js";
 
-export function transformAnthropicToOpenAI(body: Record<string, any>): Record<string, any> {
-  logger.debug(`transform: anthropic -> openai model=${body.model} messages=${(body.messages ?? []).length}`);
+/**
+ * Kimi-specific transformer for Anthropic ↔ OpenAI format conversion.
+ *
+ * Kimi API compatibility issues:
+ * 1. When `thinking` is enabled but assistant messages contain `tool_use` blocks,
+ *    Kimi expects either NO `reasoning_content` field, or the field to be present
+ *    with valid content. Claude Code sends assistant tool call messages that may
+ *    have been synthesized with empty/missing reasoning_content, causing:
+ *    "400 thinking is enabled but reasoning_content is missing in assistant tool call message"
+ *
+ * 2. Kimi uses `reasoning_content` instead of Anthropic's `thinking` block format.
+ *
+ * This transformer strips `reasoning_content` from assistant messages that also
+ * contain `tool_calls`, since Kimi cannot handle the combination.
+ */
+
+export function transformAnthropicToKimi(body: Record<string, any>): Record<string, any> {
+  logger.debug(`transform: anthropic -> kimi model=${body.model} messages=${(body.messages ?? []).length}`);
   const messages: any[] = [];
+
+  logger.debug(`transform: anthropic -> kimi messageCount=${(body.messages ?? []).length}`);
 
   if (body.system) {
     if (typeof body.system === "string") {
@@ -104,13 +115,10 @@ export function transformAnthropicToOpenAI(body: Record<string, any>): Record<st
       const thinkingParts = msg.content.filter(
         (b: any) => b.type === "thinking" && b.thinking,
       );
-      if (thinkingParts.length > 0) {
-        assistantMsg.reasoning_content = thinkingParts.map((b: any) => b.thinking).join("\n");
-      }
-
       const toolUseParts = msg.content.filter(
         (b: any) => b.type === "tool_use" && b.id,
       );
+
       if (toolUseParts.length > 0) {
         assistantMsg.tool_calls = toolUseParts.map((b: any) => ({
           id: sanitizeToolId(b.id),
@@ -120,6 +128,14 @@ export function transformAnthropicToOpenAI(body: Record<string, any>): Record<st
             arguments: JSON.stringify(b.input ?? {}),
           },
         }));
+
+        if (thinkingParts.length > 0) {
+          assistantMsg.reasoning_content = thinkingParts.map((b: any) => b.thinking).join("\n");
+        } else {
+          assistantMsg.reasoning_content = " ";
+        }
+      } else if (thinkingParts.length > 0) {
+        assistantMsg.reasoning_content = thinkingParts.map((b: any) => b.thinking).join("\n");
       }
 
       messages.push(assistantMsg);
@@ -162,13 +178,13 @@ export function transformAnthropicToOpenAI(body: Record<string, any>): Record<st
   return result;
 }
 
-export function transformOpenAIResponseToAnthropic(
-  openaiResponse: any,
+export function transformKimiResponseToAnthropic(
+  kimiResponse: any,
   originalModel: string,
 ): any {
-  logger.debug(`transform: openai -> anthropic model=${openaiResponse.model ?? originalModel} choices=${openaiResponse.choices?.length ?? 0}`);
-  const choice = openaiResponse.choices?.[0];
-  if (!choice) throw new Error("No choices in OpenAI response");
+  logger.debug(`transform: kimi -> anthropic model=${kimiResponse.model ?? originalModel} choices=${kimiResponse.choices?.length ?? 0}`);
+  const choice = kimiResponse.choices?.[0];
+  if (!choice) throw new Error("No choices in Kimi response");
 
   const content: any[] = [];
 
@@ -212,7 +228,7 @@ export function transformOpenAIResponseToAnthropic(
   };
 
   return {
-    id: openaiResponse.id ?? `msg_${Date.now()}`,
+    id: kimiResponse.id ?? `msg_${Date.now()}`,
     type: "message",
     role: "assistant",
     model: originalModel,
@@ -221,84 +237,11 @@ export function transformOpenAIResponseToAnthropic(
     stop_sequence: null,
     usage: {
       input_tokens:
-        (openaiResponse.usage?.prompt_tokens ?? 0) -
-        (openaiResponse.usage?.prompt_tokens_details?.cached_tokens ?? 0),
-      output_tokens: openaiResponse.usage?.completion_tokens ?? 0,
+        (kimiResponse.usage?.prompt_tokens ?? 0) -
+        (kimiResponse.usage?.prompt_tokens_details?.cached_tokens ?? 0),
+      output_tokens: kimiResponse.usage?.completion_tokens ?? 0,
       cache_read_input_tokens:
-        openaiResponse.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+        kimiResponse.usage?.prompt_tokens_details?.cached_tokens ?? 0,
     },
   };
-}
-
-export function* synthesizeAnthropicSSE(
-  anthropicResponse: any,
-): Generator<string> {
-  const sse = (event: string, data: any) =>
-    `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-
-  const usage = anthropicResponse.usage ?? {};
-  yield sse("message_start", {
-    type: "message_start",
-    message: {
-      id: anthropicResponse.id,
-      type: "message",
-      role: "assistant",
-      content: [],
-      model: anthropicResponse.model,
-      stop_reason: null,
-      stop_sequence: null,
-      usage: {
-        input_tokens: usage.input_tokens ?? 0,
-        output_tokens: 0,
-        cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
-      },
-    },
-  });
-
-  for (let i = 0; i < (anthropicResponse.content ?? []).length; i++) {
-    const block = anthropicResponse.content[i];
-    yield sse("content_block_start", {
-      type: "content_block_start",
-      index: i,
-      content_block:
-        block.type === "tool_use"
-          ? { type: "tool_use", id: block.id, name: block.name, input: {} }
-          : block.type === "thinking"
-            ? { type: "thinking", thinking: "", signature: block.signature ?? "" }
-            : { type: "text", text: "" },
-    });
-
-    if (block.type === "text" && block.text) {
-      yield sse("content_block_delta", {
-        type: "content_block_delta",
-        index: i,
-        delta: { type: "text_delta", text: block.text },
-      });
-    } else if (block.type === "thinking" && block.thinking) {
-      yield sse("content_block_delta", {
-        type: "content_block_delta",
-        index: i,
-        delta: { type: "thinking_delta", thinking: block.thinking },
-      });
-    } else if (block.type === "tool_use" && block.input) {
-      yield sse("content_block_delta", {
-        type: "content_block_delta",
-        index: i,
-        delta: { type: "input_json_delta", partial_json: JSON.stringify(block.input) },
-      });
-    }
-
-    yield sse("content_block_stop", { type: "content_block_stop", index: i });
-  }
-
-  yield sse("message_delta", {
-    type: "message_delta",
-    delta: {
-      stop_reason: anthropicResponse.stop_reason ?? "end_turn",
-      stop_sequence: anthropicResponse.stop_sequence ?? null,
-    },
-    usage: { output_tokens: usage.output_tokens ?? 0 },
-  });
-
-  yield sse("message_stop", { type: "message_stop" });
 }

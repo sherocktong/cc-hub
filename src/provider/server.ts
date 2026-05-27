@@ -1,10 +1,28 @@
 import http from "node:http";
+import os from "node:os";
 import {
   transformAnthropicToOpenAI,
   transformOpenAIResponseToAnthropic,
   synthesizeAnthropicSSE,
 } from "./transform.js";
+import {
+  transformAnthropicToKimi,
+  transformKimiResponseToAnthropic,
+} from "./kimi.js";
 import * as logger from "../logger.js";
+
+declare const __PKG_VERSION__: string;
+
+function getKimiHeaders() {
+  const platform = os.platform();
+  const stainlessOS = platform === "darwin" ? "MacOS" : platform === "win32" ? "Windows" : "Linux";
+  return {
+    "X-Stainless-OS": stainlessOS,
+    "X-Stainless-Package-Version": __PKG_VERSION__,
+    "X-Stainless-Runtime": "node",
+    "User-Agent": "claude-code/1.0",
+  };
+}
 
 export async function startOpenAIProxy(
   targetUrl: string,
@@ -12,6 +30,7 @@ export async function startOpenAIProxy(
   model: string,
   models: string[] = [],
   modelMappings: Record<string, string> = {},
+  provider: "openai" | "kimi" = "openai",
 ): Promise<{ baseUrl: string; stop: () => void }> {
   const base = targetUrl.replace(/\/+$/, "");
 
@@ -43,7 +62,8 @@ export async function startOpenAIProxy(
         const isStream = !!parsed.stream;
         const requestModel = parsed.model ?? model;
         const actualModel = modelMappings[requestModel] || requestModel;
-        const openaiBody = transformAnthropicToOpenAI({ ...parsed, model: actualModel, stream: false });
+        const transformBody = provider === "kimi" ? transformAnthropicToKimi : transformAnthropicToOpenAI;
+        const openaiBody = transformBody({ ...parsed, model: actualModel, stream: false });
 
         if (isStream) {
           res.writeHead(200, {
@@ -58,6 +78,7 @@ export async function startOpenAIProxy(
               headers: {
                 "Content-Type": "application/json",
                 "Authorization": `Bearer ${apiKey}`,
+                ...(provider === "kimi" ? getKimiHeaders() : {}),
               },
               body: JSON.stringify(openaiBody),
             });
@@ -69,7 +90,8 @@ export async function startOpenAIProxy(
               return;
             }
             const data = await upstream.json();
-            const anthropicResponse = transformOpenAIResponseToAnthropic(data, parsed.model ?? model);
+            const transformResponse = provider === "kimi" ? transformKimiResponseToAnthropic : transformOpenAIResponseToAnthropic;
+            const anthropicResponse = transformResponse(data, parsed.model ?? model);
             for (const chunk of synthesizeAnthropicSSE(anthropicResponse)) {
               res.write(chunk);
             }
@@ -85,6 +107,7 @@ export async function startOpenAIProxy(
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${apiKey}`,
+            ...(provider === "kimi" ? getKimiHeaders() : {}),
           },
           body: JSON.stringify(openaiBody),
         });
@@ -98,7 +121,8 @@ export async function startOpenAIProxy(
         }
 
         const data = await upstream.json();
-        const anthropicResponse = transformOpenAIResponseToAnthropic(data, parsed.model ?? model);
+        const transformResponse = provider === "kimi" ? transformKimiResponseToAnthropic : transformOpenAIResponseToAnthropic;
+        const anthropicResponse = transformResponse(data, parsed.model ?? model);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(anthropicResponse));
         return;

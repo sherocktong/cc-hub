@@ -93,9 +93,9 @@ export function execClaude(profileName: string, p: Profile, extraArgs: string[])
 
   logger.info(`Launching Claude with profile '${profileName}': model=${firstModel || "(default)"} url=${p.url || "(default)"} provider=${p.provider || "anthropic"} binary=${binary}`);
 
-  if (p.provider === "openai") {
+  if (p.provider === "openai" || p.provider === "kimi") {
     const allModels = p.models || (p.model ? [p.model] : []);
-    logger.debug(`execClaude: starting OpenAI proxy for ${allModels.length} model(s)`);
+    logger.debug(`execClaude: starting ${p.provider} proxy for ${allModels.length} model(s)`);
 
     startOpenAIProxy(
       p.url || "https://api.openai.com",
@@ -103,6 +103,7 @@ export function execClaude(profileName: string, p: Profile, extraArgs: string[])
       firstModel || "gpt-4o",
       allModels,
       {},
+      p.provider,
     ).then(({ baseUrl, stop }) => {
       env.ANTHROPIC_BASE_URL = baseUrl;
       logger.debug(`execClaude: proxy running at ${baseUrl}`);

@@ -1,4 +1,4 @@
-export type ProviderType = "anthropic" | "openai";
+export type ProviderType = "anthropic" | "openai" | "kimi";
 
 export interface Profile {
   model?: string;

@@ -181,6 +181,42 @@ describe("transformAnthropicToOpenAI — assistant messages", () => {
       function: { name: "bash", arguments: JSON.stringify({ command: "ls" }) },
     });
   });
+
+  it("converts thinking blocks to reasoning_content", () => {
+    const result = transformAnthropicToOpenAI({
+      model: "m",
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "Let me think...", signature: "abc" },
+            { type: "text", text: "Done." },
+          ],
+        },
+      ],
+    });
+    const msg = result.messages[0];
+    expect(msg.reasoning_content).toBe("Let me think...");
+    expect(msg.content).toBe("Done.");
+  });
+
+  it("preserves reasoning_content together with tool_calls", () => {
+    const result = transformAnthropicToOpenAI({
+      model: "m",
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "Step 1\nStep 2", signature: "" },
+            { type: "tool_use", id: "toolu_03", name: "bash", input: { command: "pwd" } },
+          ],
+        },
+      ],
+    });
+    const msg = result.messages[0];
+    expect(msg.reasoning_content).toBe("Step 1\nStep 2");
+    expect(msg.tool_calls).toHaveLength(1);
+  });
 });
 
 describe("transformAnthropicToOpenAI — tools", () => {
@@ -327,6 +363,53 @@ describe("transformOpenAIResponseToAnthropic", () => {
       transformOpenAIResponseToAnthropic({ choices: [] }, "m"),
     ).toThrow("No choices in OpenAI response");
   });
+
+  it("converts reasoning_content to a thinking block", () => {
+    const resp = {
+      id: "c",
+      model: "m",
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: "The answer is 42.",
+            reasoning_content: "Let me calculate...",
+          },
+          finish_reason: "stop",
+        },
+      ],
+      usage: { prompt_tokens: 5, completion_tokens: 5 },
+    };
+    const result = transformOpenAIResponseToAnthropic(resp, "m");
+    expect(result.content).toEqual([
+      { type: "thinking", thinking: "Let me calculate...", signature: "" },
+      { type: "text", text: "The answer is 42." },
+    ]);
+  });
+
+  it("places thinking block before tool_use when reasoning_content is present", () => {
+    const resp = {
+      id: "c",
+      model: "m",
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: null,
+            reasoning_content: "I need a tool.",
+            tool_calls: [
+              { id: "tc1", type: "function", function: { name: "bash", arguments: "{}" } },
+            ],
+          },
+          finish_reason: "tool_calls",
+        },
+      ],
+      usage: { prompt_tokens: 5, completion_tokens: 5 },
+    };
+    const result = transformOpenAIResponseToAnthropic(resp, "m");
+    expect(result.content[0]).toEqual({ type: "thinking", thinking: "I need a tool.", signature: "" });
+    expect(result.content[1].type).toBe("tool_use");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -406,5 +489,21 @@ describe("synthesizeAnthropicSSE", () => {
     const events = parseEvents(collectSSE(resp));
     const delta = events.find((e) => e.event === "message_delta");
     expect(delta!.data.usage.output_tokens).toBe(42);
+  });
+
+  it("yields correct events for a thinking block", () => {
+    const resp = {
+      id: "m",
+      model: "m",
+      content: [{ type: "thinking", thinking: "Deep thought", signature: "" }],
+      stop_reason: "end_turn",
+      usage: {},
+    };
+    const events = parseEvents(collectSSE(resp));
+    const start = events.find((e) => e.event === "content_block_start");
+    expect(start!.data.content_block.type).toBe("thinking");
+    const delta = events.find((e) => e.event === "content_block_delta");
+    expect(delta!.data.delta.type).toBe("thinking_delta");
+    expect(delta!.data.delta.thinking).toBe("Deep thought");
   });
 });

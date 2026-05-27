@@ -8,6 +8,11 @@ export {
   synthesizeAnthropicSSE,
 } from "./transform.js";
 
+export {
+  transformAnthropicToKimi,
+  transformKimiResponseToAnthropic,
+} from "./kimi.js";
+
 export { startOpenAIProxy } from "./server.js";
 
 const PROVIDERS = [
@@ -19,6 +24,11 @@ const PROVIDERS = [
     name: "openai",
     description:
       "Embedded proxy — translates Anthropic requests to OpenAI Chat Completions format",
+  },
+  {
+    name: "kimi",
+    description:
+      "Embedded proxy — translates Anthropic requests to Kimi API format (handles reasoning_content compatibility)",
   },
 ];
 
