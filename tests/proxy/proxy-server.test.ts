@@ -432,3 +432,121 @@ describe("POST /v1/messages — model alias mapping", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Proxy: cache_control pass-through
+// ---------------------------------------------------------------------------
+
+describe("POST /v1/messages — cache control pass-through", () => {
+  beforeEach(() => vi.restoreAllMocks());
+  afterEach(() => vi.restoreAllMocks());
+
+  it("forwards cache_control on system and user content blocks to upstream", async () => {
+    let capturedBody: any;
+    const realFetch = globalThis.fetch.bind(globalThis);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : (input as URL).toString();
+      if (url.includes("127.0.0.1")) return realFetch(input, init);
+      capturedBody = JSON.parse((init as any).body);
+      return {
+        ok: true,
+        json: async () => ({
+          id: "cmpl-cache",
+          model: FAKE_MODEL,
+          choices: [{ message: { role: "assistant", content: "OK" }, finish_reason: "stop" }],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 5,
+            prompt_tokens_details: { cached_tokens: 30, cache_creation_tokens: 10 },
+          },
+        }),
+      } as Response;
+    });
+
+    const { baseUrl, stop } = await startProxy();
+    try {
+      const res = await fetch(`${baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: FAKE_MODEL,
+          system: [
+            { type: "text", text: "Sys 1", cache_control: { type: "ephemeral" } },
+            { type: "text", text: "Sys 2" },
+          ],
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Hello", cache_control: { type: "ephemeral" } },
+              ],
+            },
+          ],
+          stream: false,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+
+      // Verify upstream request preserved cache_control
+      expect(capturedBody.messages[0]).toEqual({
+        role: "system",
+        content: [
+          { type: "text", text: "Sys 1", cache_control: { type: "ephemeral" } },
+          { type: "text", text: "Sys 2" },
+        ],
+      });
+      expect(capturedBody.messages[1]).toEqual({
+        role: "user",
+        content: [{ type: "text", text: "Hello", cache_control: { type: "ephemeral" } }],
+      });
+
+      // Verify response includes cache_creation_input_tokens
+      const json = await res.json() as any;
+      expect(json.usage.cache_read_input_tokens).toBe(30);
+      expect(json.usage.cache_creation_input_tokens).toBe(10);
+    } finally {
+      stop();
+    }
+  });
+
+  it("returns cache_creation_input_tokens in SSE stream", async () => {
+    const realFetch = globalThis.fetch.bind(globalThis);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : (input as URL).toString();
+      if (url.includes("127.0.0.1")) return realFetch(input, init);
+      return {
+        ok: true,
+        json: async () => ({
+          id: "cmpl-sse-cache",
+          model: FAKE_MODEL,
+          choices: [{ message: { role: "assistant", content: "OK" }, finish_reason: "stop" }],
+          usage: {
+            prompt_tokens: 50,
+            completion_tokens: 5,
+            prompt_tokens_details: { cached_tokens: 20, cache_creation_tokens: 5 },
+          },
+        }),
+      } as Response;
+    });
+
+    const { baseUrl, stop } = await startProxy();
+    try {
+      const res = await fetch(`${baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: FAKE_MODEL,
+          messages: [{ role: "user", content: "Hi" }],
+          stream: true,
+        }),
+      });
+
+      const text = await res.text();
+      expect(text).toContain('"cache_read_input_tokens":20');
+      expect(text).toContain('"cache_creation_input_tokens":5');
+    } finally {
+      stop();
+    }
+  });
+});

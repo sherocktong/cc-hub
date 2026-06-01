@@ -1,3 +1,5 @@
+import * as logger from "../logger.js";
+
 export function sanitizeToolId(id: string): string {
   let sanitized = id.replace(/[^a-zA-Z0-9_-]/g, "_");
   if (!/^[a-zA-Z]/.test(sanitized)) {
@@ -6,22 +8,58 @@ export function sanitizeToolId(id: string): string {
   return sanitized;
 }
 
-import * as logger from "../logger.js";
+export function buildSystemMessage(system: string | any[]): { role: "system"; content: string | any[] } | null {
+  if (typeof system === "string") {
+    return { role: "system", content: system };
+  }
+  if (Array.isArray(system)) {
+    const textBlocks = system.filter((b: any) => b.type === "text" && b.text);
+    const hasCacheControl = textBlocks.some((b: any) => b.cache_control);
+    if (hasCacheControl) {
+      const parts = textBlocks.map((b: any) => {
+        const part: any = { type: "text", text: b.text };
+        if (b.cache_control) part.cache_control = b.cache_control;
+        return part;
+      });
+      if (parts.length > 0) return { role: "system", content: parts };
+    } else {
+      const text = textBlocks.map((b: any) => b.text).join("\n");
+      if (text) return { role: "system", content: text };
+    }
+  }
+  return null;
+}
+
+export function convertAnthropicContentPart(part: any): any | null {
+  let convertedPart: any = null;
+  if (part.type === "image") {
+    if (part.source?.type === "base64" && part.source.media_type && part.source.data) {
+      const url = `data:${part.source.media_type};base64,${part.source.data}`;
+      logger.debug(`transform: converting base64 image (${part.source.media_type}, ${part.source.data.length} chars)`);
+      convertedPart = { type: "image_url", image_url: { url } };
+    } else if (part.source?.type === "url" && part.source.url) {
+      logger.debug(`transform: converting image url (${part.source.url.slice(0, 80)}...)`);
+      convertedPart = { type: "image_url", image_url: { url: part.source.url } };
+    } else {
+      logger.warn(`transform: skipping invalid image block (missing source fields)`);
+      return null;
+    }
+  } else if (part.type === "text") {
+    convertedPart = { type: "text", text: part.text };
+  }
+  if (convertedPart && part.cache_control) {
+    convertedPart.cache_control = part.cache_control;
+  }
+  return convertedPart;
+}
 
 export function transformAnthropicToOpenAI(body: Record<string, any>): Record<string, any> {
   logger.debug(`transform: anthropic -> openai model=${body.model} messages=${(body.messages ?? []).length}`);
   const messages: any[] = [];
 
   if (body.system) {
-    if (typeof body.system === "string") {
-      messages.push({ role: "system", content: body.system });
-    } else if (Array.isArray(body.system)) {
-      const text = body.system
-        .filter((b: any) => b.type === "text" && b.text)
-        .map((b: any) => b.text)
-        .join("\n");
-      if (text) messages.push({ role: "system", content: text });
-    }
+    const systemMsg = buildSystemMessage(body.system);
+    if (systemMsg) messages.push(systemMsg);
   }
 
   for (const msg of body.messages ?? []) {
@@ -63,26 +101,13 @@ export function transformAnthropicToOpenAI(body: Record<string, any>): Record<st
               (b.source?.type === "url" && b.source.url))),
       );
       if (contentParts.length > 0) {
-        const converted = contentParts
-          .map((part: any) => {
-            if (part.type === "image") {
-              if (part.source?.type === "base64" && part.source.media_type && part.source.data) {
-                const url = `data:${part.source.media_type};base64,${part.source.data}`;
-                logger.debug(`transform: converting base64 image (${part.source.media_type}, ${part.source.data.length} chars)`);
-                return { type: "image_url", image_url: { url } };
-              } else if (part.source?.type === "url" && part.source.url) {
-                logger.debug(`transform: converting image url (${part.source.url.slice(0, 80)}...)`);
-                return { type: "image_url", image_url: { url: part.source.url } };
-              }
-              logger.warn(`transform: skipping invalid image block (missing source fields)`);
-              return null;
-            }
-            return { type: "text", text: part.text };
-          })
-          .filter(Boolean);
+        const converted = contentParts.map(convertAnthropicContentPart).filter(Boolean);
         if (converted.length === 0) {
           // All content parts were invalid — nothing to add for this message
-        } else if (converted.every((p: any) => p.type === "text")) {
+        } else if (
+          converted.every((p: any) => p.type === "text") &&
+          !converted.some((p: any) => p.cache_control)
+        ) {
           messages.push({
             role: "user",
             content: converted.map((p: any) => p.text).join(""),
@@ -226,6 +251,8 @@ export function transformOpenAIResponseToAnthropic(
       output_tokens: openaiResponse.usage?.completion_tokens ?? 0,
       cache_read_input_tokens:
         openaiResponse.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+      cache_creation_input_tokens:
+        openaiResponse.usage?.prompt_tokens_details?.cache_creation_tokens ?? 0,
     },
   };
 }
@@ -251,6 +278,7 @@ export function* synthesizeAnthropicSSE(
         input_tokens: usage.input_tokens ?? 0,
         output_tokens: 0,
         cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
+        cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
       },
     },
   });

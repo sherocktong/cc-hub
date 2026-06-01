@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   sanitizeToolId,
+  buildSystemMessage,
+  convertAnthropicContentPart,
   transformAnthropicToOpenAI,
   transformOpenAIResponseToAnthropic,
   synthesizeAnthropicSSE,
@@ -23,6 +25,110 @@ describe("sanitizeToolId", () => {
   it("prepends tc_ when ID starts with a non-letter", () => {
     expect(sanitizeToolId("123abc")).toBe("tc_123abc");
     expect(sanitizeToolId("_start")).toBe("tc__start");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildSystemMessage
+// ---------------------------------------------------------------------------
+
+describe("buildSystemMessage", () => {
+  it("returns string content for a string system", () => {
+    const result = buildSystemMessage("You are helpful.");
+    expect(result).toEqual({ role: "system", content: "You are helpful." });
+  });
+
+  it("concatenates array blocks into a string when no cache_control", () => {
+    const result = buildSystemMessage([
+      { type: "text", text: "Part 1." },
+      { type: "text", text: "Part 2." },
+    ]);
+    expect(result).toEqual({ role: "system", content: "Part 1.\nPart 2." });
+  });
+
+  it("returns null for empty array", () => {
+    const result = buildSystemMessage([]);
+    expect(result).toBeNull();
+  });
+
+  it("returns null when no text blocks", () => {
+    const result = buildSystemMessage([{ type: "tool_result", text: "skip" }]);
+    expect(result).toBeNull();
+  });
+
+  it("produces content parts when cache_control is present", () => {
+    const result = buildSystemMessage([
+      { type: "text", text: "Part 1.", cache_control: { type: "ephemeral" } },
+      { type: "text", text: "Part 2." },
+    ]);
+    expect(result).toEqual({
+      role: "system",
+      content: [
+        { type: "text", text: "Part 1.", cache_control: { type: "ephemeral" } },
+        { type: "text", text: "Part 2." },
+      ],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// convertAnthropicContentPart
+// ---------------------------------------------------------------------------
+
+describe("convertAnthropicContentPart", () => {
+  it("converts a text block", () => {
+    const result = convertAnthropicContentPart({ type: "text", text: "Hello" });
+    expect(result).toEqual({ type: "text", text: "Hello" });
+  });
+
+  it("preserves cache_control on text blocks", () => {
+    const result = convertAnthropicContentPart({
+      type: "text",
+      text: "Hello",
+      cache_control: { type: "ephemeral" },
+    });
+    expect(result).toEqual({
+      type: "text",
+      text: "Hello",
+      cache_control: { type: "ephemeral" },
+    });
+  });
+
+  it("converts a base64 image block", () => {
+    const result = convertAnthropicContentPart({
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: "abc123" },
+    });
+    expect(result).toEqual({
+      type: "image_url",
+      image_url: { url: "data:image/png;base64,abc123" },
+    });
+  });
+
+  it("preserves cache_control on image blocks", () => {
+    const result = convertAnthropicContentPart({
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: "abc123" },
+      cache_control: { type: "ephemeral" },
+    });
+    expect(result).toEqual({
+      type: "image_url",
+      image_url: { url: "data:image/png;base64,abc123" },
+      cache_control: { type: "ephemeral" },
+    });
+  });
+
+  it("returns null for invalid image blocks", () => {
+    const result = convertAnthropicContentPart({
+      type: "image",
+      source: { type: "base64" },
+    });
+    expect(result).toBeNull();
+  });
+
+  it("returns null for unknown block types", () => {
+    const result = convertAnthropicContentPart({ type: "tool_result", tool_use_id: "x" });
+    expect(result).toBeNull();
   });
 });
 
@@ -82,6 +188,36 @@ describe("transformAnthropicToOpenAI — basic structure", () => {
     });
     expect(result.messages).toHaveLength(0);
   });
+
+  it("preserves cache_control on system array blocks as content parts", () => {
+    const result = transformAnthropicToOpenAI({
+      model: "m",
+      system: [
+        { type: "text", text: "Part 1.", cache_control: { type: "ephemeral" } },
+        { type: "text", text: "Part 2." },
+      ],
+      messages: [],
+    });
+    expect(result.messages[0]).toEqual({
+      role: "system",
+      content: [
+        { type: "text", text: "Part 1.", cache_control: { type: "ephemeral" } },
+        { type: "text", text: "Part 2." },
+      ],
+    });
+  });
+
+  it("falls back to string system content when no cache_control is present", () => {
+    const result = transformAnthropicToOpenAI({
+      model: "m",
+      system: [
+        { type: "text", text: "Part 1." },
+        { type: "text", text: "Part 2." },
+      ],
+      messages: [],
+    });
+    expect(result.messages[0]).toEqual({ role: "system", content: "Part 1.\nPart 2." });
+  });
 });
 
 describe("transformAnthropicToOpenAI — user message content blocks", () => {
@@ -108,6 +244,45 @@ describe("transformAnthropicToOpenAI — user message content blocks", () => {
     const msg = result.messages[0];
     expect(msg.content[0].type).toBe("image_url");
     expect(msg.content[0].image_url.url).toBe("data:image/png;base64,abc123");
+  });
+
+  it("preserves cache_control on user text blocks", () => {
+    const result = transformAnthropicToOpenAI({
+      model: "m",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Hi", cache_control: { type: "ephemeral" } },
+          ],
+        },
+      ],
+    });
+    expect(result.messages[0]).toEqual({
+      role: "user",
+      content: [{ type: "text", text: "Hi", cache_control: { type: "ephemeral" } }],
+    });
+  });
+
+  it("preserves cache_control on image blocks", () => {
+    const result = transformAnthropicToOpenAI({
+      model: "m",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: "image/png", data: "abc123" },
+              cache_control: { type: "ephemeral" },
+            },
+          ],
+        },
+      ],
+    });
+    const msg = result.messages[0];
+    expect(msg.content[0].type).toBe("image_url");
+    expect(msg.content[0].cache_control).toEqual({ type: "ephemeral" });
   });
 
   it("converts tool_result blocks into tool-role messages", () => {
@@ -358,6 +533,33 @@ describe("transformOpenAIResponseToAnthropic", () => {
     expect(result.usage.cache_read_input_tokens).toBe(40);
   });
 
+  it("maps cache_creation_input_tokens from prompt_tokens_details", () => {
+    const resp = {
+      id: "c",
+      model: "m",
+      choices: [{ message: { content: "hi" }, finish_reason: "stop" }],
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 20,
+        prompt_tokens_details: { cached_tokens: 30, cache_creation_tokens: 10 },
+      },
+    };
+    const result = transformOpenAIResponseToAnthropic(resp, "m");
+    expect(result.usage.cache_read_input_tokens).toBe(30);
+    expect(result.usage.cache_creation_input_tokens).toBe(10);
+  });
+
+  it("defaults cache_creation_input_tokens to 0 when missing", () => {
+    const resp = {
+      id: "c",
+      model: "m",
+      choices: [{ message: { content: "hi" }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 10, completion_tokens: 5 },
+    };
+    const result = transformOpenAIResponseToAnthropic(resp, "m");
+    expect(result.usage.cache_creation_input_tokens).toBe(0);
+  });
+
   it("throws when choices array is empty", () => {
     expect(() =>
       transformOpenAIResponseToAnthropic({ choices: [] }, "m"),
@@ -505,5 +707,19 @@ describe("synthesizeAnthropicSSE", () => {
     const delta = events.find((e) => e.event === "content_block_delta");
     expect(delta!.data.delta.type).toBe("thinking_delta");
     expect(delta!.data.delta.thinking).toBe("Deep thought");
+  });
+
+  it("includes cache_creation_input_tokens in message_start usage", () => {
+    const resp = {
+      id: "m",
+      model: "m",
+      content: [],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 50, cache_read_input_tokens: 20, cache_creation_input_tokens: 10 },
+    };
+    const events = parseEvents(collectSSE(resp));
+    const start = events.find((e) => e.event === "message_start");
+    expect(start!.data.message.usage.cache_read_input_tokens).toBe(20);
+    expect(start!.data.message.usage.cache_creation_input_tokens).toBe(10);
   });
 });
