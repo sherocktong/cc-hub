@@ -10,6 +10,7 @@ _cc-hub() {
     'session:Manage Claude Code sessions'
     'provider:Manage provider types'
     'cache:Manage Claude Code cache and backup files'
+    'claude-version:Manage Claude Code CLI versions'
     'completion:Print shell completion functions'
     'help:Display help for a command'
   )
@@ -56,6 +57,12 @@ _cc-hub() {
     'stats:Show summary statistics'
     'clean:Delete session JSONL files older than N days'
     'troubleshoot:Launch Claude Code to troubleshoot a session file'
+  )
+
+  local -a claude_version_subcmds
+  claude_version_subcmds=(
+    'list:List available Claude Code versions'
+    'pin:Pin Claude Code to a specific version'
   )
 
   _cc_hub_profiles() {
@@ -147,6 +154,15 @@ _cc-hub() {
           elif [[ $words[2] == "troubleshoot" ]]; then
             _arguments -C -S \
               '(-i --interactive)'{-i,--interactive}'[Open an interactive Claude Code window instead of a one-shot prompt]'
+          fi
+          ;;
+        claude-version)
+          if (( CURRENT == 2 )); then
+            _describe -t claude-version-subcmds 'claude-version subcommand' claude_version_subcmds
+          elif [[ $words[2] == "pin" ]]; then
+            _arguments -C -S \
+              '--clear[Remove the version pin]' \
+              '*:version:'
           fi
           ;;
       esac

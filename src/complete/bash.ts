@@ -42,7 +42,7 @@ _cc-hub() {
   COMPREPLY=()
   cur="\${COMP_WORDS[COMP_CWORD]}"
   prev="\${COMP_WORDS[COMP_CWORD-1]}"
-  commands="profile use run hook session provider cache completion help"
+  commands="profile use run hook session provider cache claude-version completion help"
 
   local profile_subcmds="add update list view remove rename default sync export"
   local provider_subcmds="list"
@@ -50,6 +50,7 @@ _cc-hub() {
   local hooks_subcmds="list add remove enable disable"
   local session_subcmds="list show search ps stats clean troubleshoot"
   local cache_subcmds="restore"
+  local claude_version_subcmds="list pin"
 
   # Top-level command
   if [[ \${COMP_CWORD} -eq 1 ]]; then
@@ -117,6 +118,18 @@ _cc-hub() {
         else
           local troubleshoot_opts="--interactive -i"
           COMPREPLY=($(compgen -W "$troubleshoot_opts" -- "$cur"))
+        fi
+      fi
+      ;;
+    claude-version)
+      if [[ \${COMP_CWORD} -eq 2 ]]; then
+        COMPREPLY=($(compgen -W "$claude_version_subcmds" -- "$cur"))
+      elif [[ "\${COMP_WORDS[2]}" == "pin" ]]; then
+        if [[ "$prev" == "--clear" ]]; then
+          :
+        else
+          local pin_opts="--clear"
+          COMPREPLY=($(compgen -W "$pin_opts" -- "$cur"))
         fi
       fi
       ;;

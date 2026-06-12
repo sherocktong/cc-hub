@@ -9,6 +9,7 @@ export const POWERSHELL_COMPLETION = `Register-ArgumentCompleter -Native -Comman
     'session:Manage Claude Code sessions'
     'provider:Manage provider types'
     'cache:Manage Claude Code cache and backup files'
+    'claude-version:Manage Claude Code CLI versions'
     'completion:Print shell completion functions'
     'help:Display help for a command'
   )
@@ -18,6 +19,7 @@ export const POWERSHELL_COMPLETION = `Register-ArgumentCompleter -Native -Comman
   $sessionSubcmds = @('list', 'show', 'search', 'ps', 'stats', 'clean', 'troubleshoot')
   $cacheSubcmds = @('restore')
   $providerSubcmds = @('list')
+  $claudeVersionSubcmds = @('list', 'pin')
 
   $tokens = $commandAst.CommandElements | ForEach-Object { $_.ToString() }
 
@@ -61,6 +63,16 @@ export const POWERSHELL_COMPLETION = `Register-ArgumentCompleter -Native -Comman
       if ($tokens.Count -eq 2 -or ($tokens.Count -eq 3 -and $wordToComplete -ne '')) {
         $cacheSubcmds | ForEach-Object { if ($_ -like "$wordToComplete*") { $_ } }
         return
+      }
+    }
+    'claude-version' {
+      if ($tokens.Count -eq 2 -or ($tokens.Count -eq 3 -and $wordToComplete -ne '')) {
+        $claudeVersionSubcmds | ForEach-Object { if ($_ -like "$wordToComplete*") { $_ } }
+        return
+      }
+      if ($tokens[2] -eq 'pin' -and $tokens.Count -ge 3) {
+        $opts = @('--clear')
+        $opts | ForEach-Object { if ($_ -like "$wordToComplete*") { $_ } }
       }
     }
     'use' {
