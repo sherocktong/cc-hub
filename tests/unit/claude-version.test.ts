@@ -84,9 +84,17 @@ describe("pinned version settings", () => {
   });
 
   it("reads pinned version from settings", async () => {
-    mockSettings._cc_hub_pinnedClaudeVersion = "2.1.168";
+    mockSettings.minimumVersion = "2.1.168";
+    mockSettings.requiredMaximumVersion = "2.1.168";
     const { getPinnedVersion } = await import("../../src/claude-version/utils.js");
     expect(getPinnedVersion()).toBe("2.1.168");
+  });
+
+  it("returns undefined when min/max versions differ", async () => {
+    mockSettings.minimumVersion = "2.1.160";
+    mockSettings.requiredMaximumVersion = "2.1.170";
+    const { getPinnedVersion } = await import("../../src/claude-version/utils.js");
+    expect(getPinnedVersion()).toBeUndefined();
   });
 
   it("returns undefined when no version is pinned", async () => {
@@ -98,12 +106,12 @@ describe("pinned version settings", () => {
     const { setPinnedVersion, getPinnedVersion } = await import("../../src/claude-version/utils.js");
     setPinnedVersion("2.1.170");
     expect(getPinnedVersion()).toBe("2.1.170");
+    expect(mockSettings._cc_hub_pinnedClaudeVersion).toBeUndefined();
     expect(mockSettings.minimumVersion).toBe("2.1.170");
     expect(mockSettings.requiredMaximumVersion).toBe("2.1.170");
   });
 
   it("clears pinned version and min/max version when set to undefined", async () => {
-    mockSettings._cc_hub_pinnedClaudeVersion = "2.1.168";
     mockSettings.minimumVersion = "2.1.168";
     mockSettings.requiredMaximumVersion = "2.1.168";
     const { setPinnedVersion, getPinnedVersion } = await import("../../src/claude-version/utils.js");

@@ -36,7 +36,10 @@ function getPinnedVersion(): string | undefined {
   try {
     ensureSettingsFile();
     const settings = readJson<SettingsData>(SETTINGS_FILE);
-    return settings._cc_hub_pinnedClaudeVersion;
+    if (settings.minimumVersion && settings.requiredMaximumVersion && settings.minimumVersion === settings.requiredMaximumVersion) {
+      return settings.minimumVersion;
+    }
+    return undefined;
   } catch {
     return undefined;
   }

@@ -4,18 +4,18 @@ import type { SettingsData } from "../types.js";
 export function getPinnedVersion(): string | undefined {
   ensureSettingsFile();
   const settings = readJson<SettingsData>(SETTINGS_FILE);
-  return settings._cc_hub_pinnedClaudeVersion;
+  return settings.minimumVersion && settings.requiredMaximumVersion && settings.minimumVersion === settings.requiredMaximumVersion
+    ? settings.minimumVersion
+    : undefined;
 }
 
 export function setPinnedVersion(version: string | undefined): void {
   ensureSettingsFile();
   const settings = readJson<SettingsData>(SETTINGS_FILE);
   if (version) {
-    settings._cc_hub_pinnedClaudeVersion = version;
     settings.minimumVersion = version;
     settings.requiredMaximumVersion = version;
   } else {
-    delete settings._cc_hub_pinnedClaudeVersion;
     delete settings.minimumVersion;
     delete settings.requiredMaximumVersion;
   }
