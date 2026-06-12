@@ -7,6 +7,10 @@ import {
   transformOpenAIResponseToAnthropic,
   synthesizeAnthropicSSE,
 } from "../../src/provider/transform.js";
+import {
+  transformAnthropicToKimi,
+  transformKimiResponseToAnthropic,
+} from "../../src/provider/kimi.js";
 
 // ---------------------------------------------------------------------------
 // sanitizeToolId
@@ -721,5 +725,130 @@ describe("synthesizeAnthropicSSE", () => {
     const start = events.find((e) => e.event === "message_start");
     expect(start!.data.message.usage.cache_read_input_tokens).toBe(20);
     expect(start!.data.message.usage.cache_creation_input_tokens).toBe(10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// transformAnthropicToKimi
+// ---------------------------------------------------------------------------
+
+describe("transformAnthropicToKimi", () => {
+  it("converts a simple text message", () => {
+    const result = transformAnthropicToKimi({
+      model: "kimi-k2.5",
+      messages: [{ role: "user", content: "Hello" }],
+    });
+    expect(result.model).toBe("kimi-k2.5");
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0]).toEqual({ role: "user", content: "Hello" });
+  });
+
+  it("adds reasoning_content space when tool_calls have no thinking", () => {
+    const result = transformAnthropicToKimi({
+      model: "kimi-k2.5",
+      messages: [
+        {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "toolu_01", name: "bash", input: { command: "ls" } }],
+        },
+      ],
+    });
+    const msg = result.messages[0];
+    expect(msg.tool_calls).toHaveLength(1);
+    expect(msg.reasoning_content).toBe(" ");
+  });
+
+  it("preserves reasoning_content when thinking and tool_calls are present", () => {
+    const result = transformAnthropicToKimi({
+      model: "kimi-k2.5",
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "Step 1", signature: "" },
+            { type: "tool_use", id: "toolu_02", name: "bash", input: { command: "pwd" } },
+          ],
+        },
+      ],
+    });
+    const msg = result.messages[0];
+    expect(msg.reasoning_content).toBe("Step 1");
+    expect(msg.tool_calls).toHaveLength(1);
+  });
+
+  it("preserves cache_control on user content blocks", () => {
+    const result = transformAnthropicToKimi({
+      model: "kimi-k2.5",
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Hi", cache_control: { type: "ephemeral" } }],
+        },
+      ],
+    });
+    expect(result.messages[0]).toEqual({
+      role: "user",
+      content: [{ type: "text", text: "Hi", cache_control: { type: "ephemeral" } }],
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// transformKimiResponseToAnthropic
+// ---------------------------------------------------------------------------
+
+describe("transformKimiResponseToAnthropic", () => {
+  it("maps Kimi usage.cached_tokens to cache_read_input_tokens", () => {
+    const resp = {
+      id: "c",
+      model: "kimi-k2.5",
+      choices: [{ message: { content: "hi" }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 100, completion_tokens: 20, cached_tokens: 40 },
+    };
+    const result = transformKimiResponseToAnthropic(resp, "kimi-k2.5");
+    expect(result.usage.input_tokens).toBe(60); // 100 - 40
+    expect(result.usage.output_tokens).toBe(20);
+    expect(result.usage.cache_read_input_tokens).toBe(40);
+    expect(result.usage.cache_creation_input_tokens).toBe(0);
+  });
+
+  it("falls back to prompt_tokens_details.cached_tokens when cached_tokens is absent", () => {
+    const resp = {
+      id: "c",
+      model: "kimi-k2.5",
+      choices: [{ message: { content: "hi" }, finish_reason: "stop" }],
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 20,
+        prompt_tokens_details: { cached_tokens: 30, cache_creation_tokens: 10 },
+      },
+    };
+    const result = transformKimiResponseToAnthropic(resp, "kimi-k2.5");
+    expect(result.usage.input_tokens).toBe(70); // 100 - 30
+    expect(result.usage.cache_read_input_tokens).toBe(30);
+    expect(result.usage.cache_creation_input_tokens).toBe(10);
+  });
+
+  it("converts reasoning_content to a thinking block", () => {
+    const resp = {
+      id: "c",
+      model: "kimi-k2.5",
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            content: "The answer is 42.",
+            reasoning_content: "Let me calculate...",
+          },
+          finish_reason: "stop",
+        },
+      ],
+      usage: { prompt_tokens: 5, completion_tokens: 5 },
+    };
+    const result = transformKimiResponseToAnthropic(resp, "kimi-k2.5");
+    expect(result.content).toEqual([
+      { type: "thinking", thinking: "Let me calculate...", signature: "" },
+      { type: "text", text: "The answer is 42." },
+    ]);
   });
 });

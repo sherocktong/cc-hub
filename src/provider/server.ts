@@ -108,7 +108,7 @@ export async function startOpenAIProxy(
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${apiKey}`,
-            ...(provider === "kimi" ? getKimiHeaders() : {}),
+            ...(provider === "kimi" ? getKimiHeaders(claudeVersion) : {}),
           },
           body: JSON.stringify(openaiBody),
         });

@@ -207,6 +207,11 @@ export function transformKimiResponseToAnthropic(
     content_filter: "stop_sequence",
   };
 
+  const cachedTokens =
+    kimiResponse.usage?.prompt_tokens_details?.cached_tokens ??
+    kimiResponse.usage?.cached_tokens ??
+    0;
+
   return {
     id: kimiResponse.id ?? `msg_${Date.now()}`,
     type: "message",
@@ -216,12 +221,9 @@ export function transformKimiResponseToAnthropic(
     stop_reason: finishMap[choice.finish_reason] ?? "end_turn",
     stop_sequence: null,
     usage: {
-      input_tokens:
-        (kimiResponse.usage?.prompt_tokens ?? 0) -
-        (kimiResponse.usage?.prompt_tokens_details?.cached_tokens ?? 0),
+      input_tokens: (kimiResponse.usage?.prompt_tokens ?? 0) - cachedTokens,
       output_tokens: kimiResponse.usage?.completion_tokens ?? 0,
-      cache_read_input_tokens:
-        kimiResponse.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+      cache_read_input_tokens: cachedTokens,
       cache_creation_input_tokens:
         kimiResponse.usage?.prompt_tokens_details?.cache_creation_tokens ?? 0,
     },
