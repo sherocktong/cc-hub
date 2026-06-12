@@ -35,6 +35,9 @@ export interface SettingsData {
   _cc_hub_seq?: number;
   _cc_hub_logLevel?: string;
   _cc_hub_pinnedClaudeVersion?: string;
+  autoUpdatesChannel?: string;
+  minimumVersion?: string;
+  requiredMaximumVersion?: string;
   [key: string]: unknown;
 }
 

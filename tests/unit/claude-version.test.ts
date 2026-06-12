@@ -94,17 +94,23 @@ describe("pinned version settings", () => {
     expect(getPinnedVersion()).toBeUndefined();
   });
 
-  it("writes pinned version to settings", async () => {
+  it("writes pinned version and min/max version to settings", async () => {
     const { setPinnedVersion, getPinnedVersion } = await import("../../src/claude-version/utils.js");
     setPinnedVersion("2.1.170");
     expect(getPinnedVersion()).toBe("2.1.170");
+    expect(mockSettings.minimumVersion).toBe("2.1.170");
+    expect(mockSettings.requiredMaximumVersion).toBe("2.1.170");
   });
 
-  it("clears pinned version when set to undefined", async () => {
+  it("clears pinned version and min/max version when set to undefined", async () => {
     mockSettings._cc_hub_pinnedClaudeVersion = "2.1.168";
+    mockSettings.minimumVersion = "2.1.168";
+    mockSettings.requiredMaximumVersion = "2.1.168";
     const { setPinnedVersion, getPinnedVersion } = await import("../../src/claude-version/utils.js");
     setPinnedVersion(undefined);
     expect(getPinnedVersion()).toBeUndefined();
+    expect(mockSettings.minimumVersion).toBeUndefined();
+    expect(mockSettings.requiredMaximumVersion).toBeUndefined();
   });
 });
 
