@@ -23,4 +23,5 @@ export function createPathCodec(): IPathCodec {
   return new UnixPathCodec();
 }
 
+export { getClaudeVersion } from "./binary-resolver.js";
 export type { IDesktopApp, IProfileSyncer, IBinaryResolver, IPathCodec };

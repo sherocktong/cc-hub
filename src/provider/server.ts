@@ -13,14 +13,14 @@ import * as logger from "../logger.js";
 
 declare const __PKG_VERSION__: string;
 
-function getKimiHeaders() {
+function getKimiHeaders(claudeVersion: string) {
   const platform = os.platform();
   const stainlessOS = platform === "darwin" ? "MacOS" : platform === "win32" ? "Windows" : "Linux";
   return {
     "X-Stainless-OS": stainlessOS,
     "X-Stainless-Package-Version": __PKG_VERSION__,
     "X-Stainless-Runtime": "node",
-    "User-Agent": "claude-code/1.0",
+    "User-Agent": `claude-code/${claudeVersion}`,
   };
 }
 
@@ -31,6 +31,7 @@ export async function startOpenAIProxy(
   models: string[] = [],
   modelMappings: Record<string, string> = {},
   provider: "openai" | "kimi" = "openai",
+  claudeVersion: string = "0.0.0",
 ): Promise<{ baseUrl: string; stop: () => void }> {
   const base = targetUrl.replace(/\/+$/, "");
 
@@ -78,7 +79,7 @@ export async function startOpenAIProxy(
               headers: {
                 "Content-Type": "application/json",
                 "Authorization": `Bearer ${apiKey}`,
-                ...(provider === "kimi" ? getKimiHeaders() : {}),
+                ...(provider === "kimi" ? getKimiHeaders(claudeVersion) : {}),
               },
               body: JSON.stringify(openaiBody),
             });

@@ -3,6 +3,7 @@ import { startOpenAIProxy } from "../provider/server.js";
 import { isAnthropicModel, ANTHROPIC_ALIASES } from "../provider/index.js";
 import { safeAction } from "../logger.js";
 import { ensureProfilesFile, readJson, PROFILES_FILE } from "../config.js";
+import { getClaudeVersion } from "../platform/index.js";
 import type { ProfilesData } from "../types.js";
 
 function collect(value: string, previous: string[]): string[] {
@@ -53,7 +54,15 @@ export function proxyCommand(): Command {
         models = [defaultModel];
       }
 
-      const { baseUrl, stop } = await startOpenAIProxy(targetUrl, apiKey, defaultModel, models, modelMappings);
+      const { baseUrl, stop } = await startOpenAIProxy(
+        targetUrl,
+        apiKey,
+        defaultModel,
+        models,
+        modelMappings,
+        "openai",
+        getClaudeVersion(),
+      );
       console.log(`Proxy running at ${baseUrl}`);
       console.log("Press Ctrl+C to stop");
 

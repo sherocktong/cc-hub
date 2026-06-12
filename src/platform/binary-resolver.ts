@@ -2,6 +2,34 @@ import { spawnSync } from "node:child_process";
 import type { IBinaryResolver, IDesktopApp } from "./interfaces.js";
 import * as logger from "../logger.js";
 
+let cachedVersion: string | undefined;
+
+export function getClaudeVersion(): string {
+  if (cachedVersion) return cachedVersion;
+
+  logger.debug("binary-resolver: detecting Claude version");
+  try {
+    const result = spawnSync("claude", ["--version"], {
+      shell: process.platform === "win32",
+      encoding: "utf-8",
+    });
+    if (result.status === 0 && result.stdout) {
+      const match = result.stdout.trim().match(/^(\d+\.\d+\.\d+)/);
+      if (match) {
+        cachedVersion = match[1];
+        logger.debug(`binary-resolver: detected Claude version ${cachedVersion}`);
+        return cachedVersion;
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  cachedVersion = "0.0.0";
+  logger.debug("binary-resolver: could not detect Claude version, using default");
+  return cachedVersion;
+}
+
 export class SystemBinaryResolver implements IBinaryResolver {
   constructor(private app: IDesktopApp) {}
 

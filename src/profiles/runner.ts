@@ -9,7 +9,7 @@ import {
 } from "../config.js";
 import type { Profile, SettingsData } from "../types.js";
 import { startOpenAIProxy } from "../provider/index.js";
-import { createBinaryResolver } from "../platform/index.js";
+import { createBinaryResolver, getClaudeVersion } from "../platform/index.js";
 import * as logger from "../logger.js";
 
 export const BUILT_IN_DEFAULT = "__builtin__";
@@ -104,6 +104,7 @@ export function execClaude(profileName: string, p: Profile, extraArgs: string[])
       allModels,
       {},
       p.provider,
+      getClaudeVersion(),
     ).then(({ baseUrl, stop }) => {
       env.ANTHROPIC_BASE_URL = baseUrl;
       logger.debug(`execClaude: proxy running at ${baseUrl}`);
