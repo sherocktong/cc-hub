@@ -39,7 +39,7 @@ export class MacOSDesktopApp implements IDesktopApp {
     return configLib;
   }
 
-  findBinary(): string | undefined {
+  findBinary(pinnedVersion?: string): string | undefined {
     logger.debug(`desktop-app: searching for binary in ${this.supportDir}`);
     const claudeCodeDir = path.join(this.supportDir, "claude-code");
     if (!fs.existsSync(claudeCodeDir)) return undefined;
@@ -56,7 +56,19 @@ export class MacOSDesktopApp implements IDesktopApp {
     if (versions.length === 0) return undefined;
 
     versions.sort(sortSemverDesc);
-    const binary = path.join(claudeCodeDir, versions[0], "claude.app", "Contents", "MacOS", "claude");
+
+    let targetVersion = versions[0];
+    if (pinnedVersion) {
+      const match = versions.find((v) => v === pinnedVersion);
+      if (match) {
+        targetVersion = match;
+        logger.debug(`desktop-app: using pinned version ${targetVersion}`);
+      } else {
+        logger.warn(`desktop-app: pinned version ${pinnedVersion} not found locally; falling back to latest ${targetVersion}`);
+      }
+    }
+
+    const binary = path.join(claudeCodeDir, targetVersion, "claude.app", "Contents", "MacOS", "claude");
     logger.debug(`desktop-app: found macOS binary ${binary}`);
     return binary;
   }
@@ -143,7 +155,7 @@ export class WindowsDesktopApp implements IDesktopApp {
     return dir ? path.join(dir, "local-agent-mode-sessions") : undefined;
   }
 
-  findBinary(): string | undefined {
+  findBinary(_pinnedVersion?: string): string | undefined {
     const win32Binary = path.join(process.env.LOCALAPPDATA || "", "Programs", "Claude", "Claude.exe");
     if (fs.existsSync(win32Binary)) return win32Binary;
     return undefined;
@@ -155,5 +167,5 @@ export class NoOpDesktopApp implements IDesktopApp {
   getSupportDir(): undefined { return undefined; }
   getSessionsDir(): undefined { return undefined; }
   getConfigLibrary(): undefined { return undefined; }
-  findBinary(): undefined { return undefined; }
+  findBinary(_pinnedVersion?: string): undefined { return undefined; }
 }

@@ -7,6 +7,7 @@ import { completionCommand } from "./complete/index.js";
 import { providerCommand } from "./provider/index.js";
 import { proxyCommand } from "./proxy/index.js";
 import { cacheCommand } from "./cache/index.js";
+import { claudeVersionCommand } from "./claude-version/index.js";
 import { installGlobalExceptionHandlers, setLogLevel } from "./logger.js";
 import { SETTINGS_FILE, ensureSettingsFile, readJson } from "./config.js";
 import type { SettingsData } from "./types.js";
@@ -37,6 +38,7 @@ program.addCommand(completionCommand());
 program.addCommand(providerCommand());
 program.addCommand(proxyCommand());
 program.addCommand(cacheCommand());
+program.addCommand(claudeVersionCommand());
 
 try {
   program.parse();

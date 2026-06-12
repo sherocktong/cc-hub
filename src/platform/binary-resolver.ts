@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
 import type { IBinaryResolver, IDesktopApp } from "./interfaces.js";
+import { SETTINGS_FILE, ensureSettingsFile, readJson } from "../config.js";
+import type { SettingsData } from "../types.js";
 import * as logger from "../logger.js";
 
 let cachedVersion: string | undefined;
@@ -30,10 +32,22 @@ export function getClaudeVersion(): string {
   return cachedVersion;
 }
 
+function getPinnedVersion(): string | undefined {
+  try {
+    ensureSettingsFile();
+    const settings = readJson<SettingsData>(SETTINGS_FILE);
+    return settings._cc_hub_pinnedClaudeVersion;
+  } catch {
+    return undefined;
+  }
+}
+
 export class SystemBinaryResolver implements IBinaryResolver {
   constructor(private app: IDesktopApp) {}
 
-  resolve(): string {
+  resolve(pinnedVersion?: string): string {
+    const pin = pinnedVersion ?? getPinnedVersion();
+
     logger.debug("binary-resolver: trying global 'claude' command");
     try {
       const result = spawnSync("claude", ["--version"], {
@@ -42,6 +56,16 @@ export class SystemBinaryResolver implements IBinaryResolver {
       });
       if (result.status === 0) {
         logger.debug("binary-resolver: found global 'claude'");
+        if (pin) {
+          const currentVersion = getClaudeVersion();
+          if (currentVersion !== pin) {
+            logger.warn(`binary-resolver: global claude version ${currentVersion} does not match pinned version ${pin}`);
+            console.warn(`Warning: installed Claude version (${currentVersion}) does not match pinned version (${pin}).`);
+            console.warn(`To install the pinned version, run: npm install -g @anthropic-ai/claude-code@${pin}`);
+          } else {
+            logger.debug(`binary-resolver: global claude version matches pinned ${pin}`);
+          }
+        }
         return "claude";
       }
     } catch {
@@ -49,7 +73,7 @@ export class SystemBinaryResolver implements IBinaryResolver {
     }
 
     logger.debug("binary-resolver: trying desktop app binary");
-    const desktopBinary = this.app.findBinary();
+    const desktopBinary = this.app.findBinary(pin);
     if (desktopBinary) {
       logger.debug(`binary-resolver: found desktop binary at ${desktopBinary}`);
       return desktopBinary;

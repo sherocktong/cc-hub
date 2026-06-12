@@ -5,7 +5,7 @@ export interface IDesktopApp {
   getSupportDir(): string | undefined;
   getSessionsDir(): string | undefined;
   getConfigLibrary(): string | undefined;
-  findBinary(): string | undefined;
+  findBinary(pinnedVersion?: string): string | undefined;
 }
 
 export interface IProfileSyncer {
@@ -16,7 +16,7 @@ export interface IProfileSyncer {
 }
 
 export interface IBinaryResolver {
-  resolve(): string;
+  resolve(pinnedVersion?: string): string;
 }
 
 export interface IPathCodec {
