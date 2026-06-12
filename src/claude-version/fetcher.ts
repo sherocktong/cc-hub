@@ -2,6 +2,8 @@ let cache: Array<{ version: string; date: string }> | null = null;
 let cacheTime = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+declare const __PKG_VERSION__: string;
+
 export async function fetchChangelogVersions(): Promise<Array<{ version: string; date: string }>> {
   if (cache && Date.now() - cacheTime < CACHE_TTL_MS) {
     return cache;
@@ -10,7 +12,7 @@ export async function fetchChangelogVersions(): Promise<Array<{ version: string;
   const url = "https://code.claude.com/docs/en/changelog";
   const response = await fetch(url, {
     headers: {
-      "User-Agent": "cc-hub/1.0",
+      "User-Agent": `cc-hub/${__PKG_VERSION__ || "0.0.0"}`,
     },
   });
 
@@ -31,7 +33,7 @@ export function parseChangelogHtml(html: string): Array<{ version: string; date:
   const seen = new Set<string>();
 
   // Strategy 1: Extract from embedded Next.js component JSON (most reliable)
-  // The HTML contains: _jsx(Update, { label: "2.1.173", description: "June 11, 2026", ... })
+  // The HTML contains: _jsx(Update, { label: "x.y.z", description: "Month D, YYYY", ... })
   const componentRegex = /label:\s*"(\d+\.\d+\.\d+)"[\s\S]*?description:\s*"([^"]{5,60})"/g;
   let match: RegExpExecArray | null;
   while ((match = componentRegex.exec(html)) !== null) {
