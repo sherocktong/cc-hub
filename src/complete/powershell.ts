@@ -19,7 +19,7 @@ export const POWERSHELL_COMPLETION = `Register-ArgumentCompleter -Native -Comman
   $sessionSubcmds = @('list', 'show', 'search', 'ps', 'stats', 'clean', 'troubleshoot')
   $cacheSubcmds = @('restore')
   $providerSubcmds = @('list')
-  $claudeVersionSubcmds = @('list', 'pin')
+  $claudeVersionSubcmds = @('list', 'pin', 'unpin')
 
   $tokens = $commandAst.CommandElements | ForEach-Object { $_.ToString() }
 

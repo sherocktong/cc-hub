@@ -50,7 +50,7 @@ _cc-hub() {
   local hooks_subcmds="list add remove enable disable"
   local session_subcmds="list show search ps stats clean troubleshoot"
   local cache_subcmds="restore"
-  local claude_version_subcmds="list pin"
+  local claude_version_subcmds="list pin unpin"
 
   # Top-level command
   if [[ \${COMP_CWORD} -eq 1 ]]; then

@@ -123,6 +123,43 @@ describe("pinned version settings", () => {
 });
 
 // ---------------------------------------------------------------------------
+// claude-version unpin command
+// ---------------------------------------------------------------------------
+
+describe("claude-version unpin command", () => {
+  const setPinnedVersionMock = vi.fn();
+
+  beforeEach(() => {
+    vi.doMock("../../src/claude-version/utils.js", () => ({
+      getPinnedVersion: vi.fn(),
+      setPinnedVersion: setPinnedVersionMock,
+    }));
+  });
+
+  afterEach(() => {
+    vi.doUnmock("../../src/claude-version/utils.js");
+    setPinnedVersionMock.mockReset();
+  });
+
+  it("calls setPinnedVersion(undefined) and prints a confirmation", async () => {
+    const { claudeVersionCommand } = await import("../../src/claude-version/commands.js");
+    const program = claudeVersionCommand();
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, "log").mockImplementation((msg: unknown) => {
+      logs.push(String(msg));
+    });
+
+    await program.parseAsync(["node", "claude-version", "unpin"]);
+
+    expect(setPinnedVersionMock).toHaveBeenCalledWith(undefined);
+    expect(logs).toContain("Version pin cleared. cc-hub will use the latest available Claude Code version.");
+
+    logSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // MacOSDesktopApp.findBinary with pinned version
 // ---------------------------------------------------------------------------
 
@@ -177,6 +214,7 @@ describe("SystemBinaryResolver.resolve", () => {
   });
 
   it("uses desktop app binary with pinned version", async () => {
+    vi.resetModules();
     vi.doMock("node:child_process", () => ({
       spawnSync: vi.fn().mockReturnValue({ status: 1, stdout: "", stderr: "" }),
     }));

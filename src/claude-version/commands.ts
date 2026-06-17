@@ -60,8 +60,16 @@ export function claudeVersionCommand(): Command {
     }));
 
   cmd
+    .command("unpin")
+    .description("Remove the Claude Code version pin")
+    .action(safeAction(() => {
+      setPinnedVersion(undefined);
+      console.log("Version pin cleared. cc-hub will use the latest available Claude Code version.");
+    }));
+
+  cmd
     .command("pin [version]")
-    .description("Pin Claude Code to a specific version (omit or --clear to unpin)")
+    .description("Pin Claude Code to a specific version")
     .option("--clear", "Remove the version pin")
     .action(safeAction(async (version: string | undefined, opts: { clear?: boolean }) => {
       if (opts.clear || !version) {

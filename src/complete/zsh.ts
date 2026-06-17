@@ -63,6 +63,7 @@ _cc-hub() {
   claude_version_subcmds=(
     'list:List available Claude Code versions'
     'pin:Pin Claude Code to a specific version'
+    'unpin:Remove the Claude Code version pin'
   )
 
   _cc_hub_profiles() {
