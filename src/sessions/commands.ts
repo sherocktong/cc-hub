@@ -142,8 +142,9 @@ export function sessionCommand(): Command {
     .option("-p, --project <project>", "Filter to a specific project (partial match)")
     .option("-n, --limit <n>", "Max number of matching files to show", "20")
     .option("-i, --ignore-case", "Case-insensitive search")
-    .action(safeAction((query: string, opts: { project?: string; limit: string; ignoreCase?: boolean }) => {
-      logger.debug(`session search: query="${query}" project=${opts.project || "(all)"} limit=${opts.limit} ignoreCase=${!!opts.ignoreCase}`);
+    .option("-d, --detail", "Show matching lines in addition to session headers")
+    .action(safeAction((query: string, opts: { project?: string; limit: string; ignoreCase?: boolean; detail?: boolean }) => {
+      logger.debug(`session search: query="${query}" project=${opts.project || "(all)"} limit=${opts.limit} ignoreCase=${!!opts.ignoreCase} detail=${!!opts.detail}`);
       let searchRoots: Array<{ root: string; label: string }> = [{ root: PROJECTS_DIR, label: "" }];
       if (isDesktopAppInstalled()) {
         searchRoots.push({ root: DESKTOP_SESSIONS_DIR, label: "[desktop] " });
@@ -158,10 +159,10 @@ export function sessionCommand(): Command {
       }
 
       const limit = parseInt(opts.limit, 10);
-      let count = 0;
+      const needle = opts.ignoreCase ? query.toLowerCase() : query;
+      const matches: Array<{ fullPath: string; label: string; baseDir: string; mtimeMs: number }> = [];
 
       function searchDir(dir: string, label: string, baseDir: string): void {
-        if (count >= limit) return;
         let entries: fs.Dirent[];
         try {
           entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -170,7 +171,6 @@ export function sessionCommand(): Command {
         }
 
         for (const entry of entries) {
-          if (count >= limit) break;
           const fullPath = path.join(dir, entry.name);
 
           if (entry.isDirectory()) {
@@ -178,50 +178,13 @@ export function sessionCommand(): Command {
           } else if (entry.name.endsWith(".jsonl")) {
             try {
               const content = fs.readFileSync(fullPath, "utf-8");
-              const lines = content.split("\n");
-              let found = false;
-
-              for (let lineno = 0; lineno < lines.length; lineno++) {
-                const line = lines[lineno];
-                if (!line.trim()) continue;
-
-                const match = opts.ignoreCase
-                  ? line.toLowerCase().includes(query.toLowerCase())
-                  : line.includes(query);
-
-                if (match) {
-                  if (!found) {
-                    const relPath = path.relative(baseDir, fullPath);
-                    const projEnc = relPath.split(path.sep)[0];
-                    const sessionId = path.basename(fullPath, ".jsonl");
-                    const projName = label ? projEnc : decodePath(projEnc);
-                    console.log(`${label}[${projName}  →  ${sessionId}]`);
-                    found = true;
-                    count++;
-                  }
-
-                  try {
-                    const d = JSON.parse(line);
-                    const { role, text } = extractText(d);
-                    if (text) {
-                      console.log(`  line ${lineno + 1} [${role}]: ${snippet(text, query)}`);
-                    } else {
-                      console.log(`  line ${lineno + 1}: ${line.slice(0, 140)}`);
-                    }
-                  } catch {
-                    console.log(`  line ${lineno + 1}: ${line.slice(0, 140)}`);
-                  }
-
-                  const matchCount = lines.slice(0, lineno + 1).filter((l, i) => {
-                    if (i > lineno) return false;
-                    return opts.ignoreCase
-                      ? l.toLowerCase().includes(query.toLowerCase())
-                      : l.includes(query);
-                  }).length;
-                  if (matchCount >= 5) break;
-                }
-              }
-              if (found) console.log("");
+              const haystack = opts.ignoreCase ? content.toLowerCase() : content;
+              if (!haystack.includes(needle)) continue;
+              let mtimeMs = 0;
+              try {
+                mtimeMs = fs.statSync(fullPath).mtimeMs;
+              } catch { /* skip */ }
+              matches.push({ fullPath, label, baseDir, mtimeMs });
             } catch { /* skip unreadable files */ }
           }
         }
@@ -229,6 +192,53 @@ export function sessionCommand(): Command {
 
       for (const { root, label } of searchRoots) {
         searchDir(root, label, root);
+      }
+
+      // Most recently updated first
+      matches.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+      function printMatchLines(fullPath: string): void {
+        const content = fs.readFileSync(fullPath, "utf-8");
+        const lines = content.split("\n");
+
+        for (let lineno = 0; lineno < lines.length; lineno++) {
+          const line = lines[lineno];
+          if (!line.trim()) continue;
+
+          const haystack = opts.ignoreCase ? line.toLowerCase() : line;
+          if (!haystack.includes(needle)) continue;
+
+          try {
+            const d = JSON.parse(line);
+            const { role, text } = extractText(d);
+            if (text) {
+              console.log(`  line ${lineno + 1} [${role}]: ${snippet(text, query)}`);
+            } else {
+              console.log(`  line ${lineno + 1}: ${line.slice(0, 140)}`);
+            }
+          } catch {
+            console.log(`  line ${lineno + 1}: ${line.slice(0, 140)}`);
+          }
+
+          const matchCount = lines.slice(0, lineno + 1).filter((l) =>
+            (opts.ignoreCase ? l.toLowerCase() : l).includes(needle)
+          ).length;
+          if (matchCount >= 5) break;
+        }
+      }
+
+      for (const m of matches.slice(0, limit)) {
+        const relPath = path.relative(m.baseDir, m.fullPath);
+        const projEnc = relPath.split(path.sep)[0];
+        const sessionId = path.basename(m.fullPath, ".jsonl");
+        const projName = m.label ? projEnc : decodePath(projEnc);
+        const { slug: title } = parseSessionMeta(m.fullPath);
+        console.log(`${m.label}[${projName}  →  ${sessionId}]  ${title || "-"}  (updated ${formatTimestamp(m.mtimeMs)})`);
+
+        if (opts.detail) {
+          printMatchLines(m.fullPath);
+        }
+        console.log("");
       }
     }));
 
